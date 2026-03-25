@@ -56,7 +56,6 @@ CHANNELS_JSON='[{"type":"telegram","id":"my-telegram","token":"<BOT_TOKEN>","def
 # Option B: Single Telegram channel (legacy)
 TELEGRAM_BOT_TOKEN=<token>
 TELEGRAM_CHANNEL_ID=<id>
-TELEGRAM_POLLING_INTERVAL=300
 ```
 
 ### Agents

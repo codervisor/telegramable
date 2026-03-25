@@ -16,6 +16,9 @@ updated_at: 2026-03-25T19:11:32.514430186Z
 
 # Web Chat UI — Telegram-Style AI Agent Interface
 
+> **Status**: planned · **Priority**: high · **Created**: 2026-03-25
+> **North Star**: Open the web app on your phone, chat with Claude Code running on your machine — same streaming, permissions, and file handling as Telegram.
+
 ## Overview
 
 Users currently need Telegram installed to interact with AI agents. This spec adds a web-based chat UI that mirrors the Telegram experience — a responsive, mobile-first chat interface served by the Next.js app (`apps/web`). It connects to the same hub/router as Telegram, acting as a new "web" channel adapter.
