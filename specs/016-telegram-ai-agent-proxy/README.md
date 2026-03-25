@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 created: 2026-03-25
 priority: critical
 tags:
@@ -11,7 +11,10 @@ tags:
 depends_on:
 - 012-im-session-interactivity
 created_at: 2026-03-25T13:16:51.733886253Z
-updated_at: 2026-03-25T13:16:51.733886253Z
+updated_at: 2026-03-25T15:34:50.750960527Z
+transitions:
+- status: in-progress
+  at: 2026-03-25T15:34:50.750960527Z
 ---
 
 # Telegram AI Agent Proxy — Repositioned Architecture

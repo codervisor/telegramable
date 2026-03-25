@@ -5,6 +5,7 @@ import { IMAdapter, IMMessage } from "../gateway/types";
 import { Logger } from "../logging";
 import { ChunkThrottler } from "./chunkThrottler";
 import { ExecutionRegistry, InMemoryExecutionRegistry } from "./executionRegistry";
+import { PermissionBridge } from "./permissionBridge";
 import { Router } from "./router";
 
 const truncate = (text: string, max: number): string => {
@@ -57,10 +58,29 @@ const formatEvent = (event: ExecutionEvent): string => {
   }
 };
 
+const PERMISSION_CALLBACK_PREFIX = "perm:";
+
+/** Escape HTML special characters for Telegram HTML parse mode. */
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Format a tool permission request as an HTML message for Telegram. */
+const formatPermissionRequest = (toolName: string, toolInput: Record<string, unknown>): string => {
+  const inputPreview = truncate(JSON.stringify(toolInput, null, 2), 500);
+  return (
+    `<b>🔐 Permission Request</b>\n\n` +
+    `<b>Tool:</b> <code>${escapeHtml(toolName)}</code>\n` +
+    `<blockquote expandable>${escapeHtml(inputPreview)}</blockquote>`
+  );
+};
+
 export class ChannelHub {
   private readonly adapters = new Map<string, IMAdapter>();
   private readonly executionRegistry: ExecutionRegistry;
   private readonly chunkThrottlers = new Map<string, ChunkThrottler>();
+  private readonly permissionBridge: PermissionBridge;
+  private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
+  private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
   private unsubscribeEvents?: () => void;
 
   constructor(
@@ -71,6 +91,7 @@ export class ChannelHub {
     executionRegistry?: ExecutionRegistry
   ) {
     this.executionRegistry = executionRegistry ?? new InMemoryExecutionRegistry();
+    this.permissionBridge = new PermissionBridge(logger);
 
     for (const adapter of adapters) {
       if (this.adapters.has(adapter.id)) {
@@ -97,6 +118,8 @@ export class ChannelHub {
       this.unsubscribeEvents();
       this.unsubscribeEvents = undefined;
     }
+
+    this.permissionBridge.cancelAll();
 
     for (const throttler of this.chunkThrottlers.values()) {
       await throttler.flush();
@@ -138,16 +161,25 @@ export class ChannelHub {
   }
 
   private async handleMessage(message: IMMessage): Promise<void> {
-    if (!message.text || message.text.trim().length === 0) {
-      this.logger.warn("Ignoring empty message.", {
-        channelId: message.channelId,
-        chatId: message.chatId
-      });
+    // Handle callback queries (inline keyboard responses)
+    if (message.callbackData) {
+      await this.handleCallbackQuery(message);
       return;
     }
 
+    if (!message.text || message.text.trim().length === 0) {
+      // Allow file-only messages to pass through
+      if (!message.fileId) {
+        this.logger.warn("Ignoring empty message.", {
+          channelId: message.channelId,
+          chatId: message.chatId
+        });
+        return;
+      }
+    }
+
     const adapter = this.adapters.get(message.channelId);
-    const builtin = parseBuiltinCommand(message.text);
+    const builtin = message.text ? parseBuiltinCommand(message.text) : null;
     if (adapter && builtin) {
       await this.handleBuiltinCommand(adapter, message, builtin);
       return;
@@ -157,7 +189,14 @@ export class ChannelHub {
     const { runtime, message: routedMessage } = this.router.select(message);
 
     if (adapter) {
-      await adapter.sendMessage(message.chatId, `Received command. Execution ID: ${executionId}`);
+      // Try to create a forum topic for this execution
+      const topicId = await this.tryCreateForumTopic(adapter, message.chatId, executionId, message.text || "New task");
+
+      if (topicId) {
+        await adapter.sendMessage(message.chatId, `Received command. Execution ID: ${executionId}`);
+      } else {
+        await adapter.sendMessage(message.chatId, `Received command. Execution ID: ${executionId}`);
+      }
     }
 
     this.logger.info("Received message.", {
@@ -180,6 +219,71 @@ export class ChannelHub {
       });
       this.logger.error("Runtime execution failed.", { executionId, reason });
     }
+  }
+
+  private async handleCallbackQuery(message: IMMessage): Promise<void> {
+    if (!message.callbackData?.startsWith(PERMISSION_CALLBACK_PREFIX)) {
+      return;
+    }
+
+    const adapter = this.adapters.get(message.channelId);
+
+    // Parse: "perm:<requestId>:<allow|deny>"
+    const parts = message.callbackData.slice(PERMISSION_CALLBACK_PREFIX.length).split(":");
+    const requestId = parts[0];
+    const decision = parts[1] === "allow" ? "allow" as const : "deny" as const;
+
+    if (!requestId) {
+      return;
+    }
+
+    const responded = this.permissionBridge.respond(requestId, decision);
+
+    // Acknowledge the callback query
+    if (adapter?.answerCallbackQuery && message.callbackQueryId) {
+      await adapter.answerCallbackQuery(
+        message.callbackQueryId,
+        responded ? `${decision === "allow" ? "✅ Approved" : "❌ Denied"}` : "Request expired."
+      );
+    }
+
+    // Edit the original message to reflect the decision
+    if (adapter?.editMessage && message.messageId) {
+      const statusText = decision === "allow" ? "✅ <b>Approved</b>" : "❌ <b>Denied</b>";
+      await adapter.editMessage(message.chatId, message.messageId, statusText).catch(() => {
+        // Non-critical — message may have been deleted
+      });
+    }
+  }
+
+  private async tryCreateForumTopic(
+    adapter: IMAdapter,
+    chatId: string,
+    executionId: string,
+    taskPreview: string
+  ): Promise<number | undefined> {
+    if (!adapter.createForumTopic) {
+      return undefined;
+    }
+
+    try {
+      const topicName = `Claude: ${truncate(taskPreview, 60)}`;
+      const topicId = await adapter.createForumTopic(chatId, topicName);
+      this.topicMap.set(`${adapter.id}:${chatId}:${executionId}`, topicId);
+      this.logger.debug("Forum topic created.", { chatId, executionId, topicId });
+      return topicId;
+    } catch (error) {
+      // Forum topics require supergroup with topics enabled — graceful fallback
+      this.logger.debug("Forum topic creation failed, using flat chat.", {
+        chatId,
+        reason: error instanceof Error ? error.message : "unknown"
+      });
+      return undefined;
+    }
+  }
+
+  private getTopicId(channelId: string, chatId: string, executionId: string): number | undefined {
+    return this.topicMap.get(`${channelId}:${chatId}:${executionId}`);
   }
 
   private trackEvent(event: ExecutionEvent): void {
@@ -212,6 +316,20 @@ export class ChannelHub {
   }
 
   private async forwardEvent(adapter: IMAdapter, event: ExecutionEvent): Promise<void> {
+    const topicId = this.getTopicId(event.channelId, event.chatId, event.executionId);
+
+    // Handle permission requests — send inline keyboard
+    if (event.type === "permission-request") {
+      await this.forwardPermissionRequest(adapter, event, topicId);
+      return;
+    }
+
+    // Handle streaming text — accumulate and edit message in-place
+    if (event.type === "stream-text") {
+      await this.forwardStreamText(adapter, event, topicId);
+      return;
+    }
+
     if (event.type === "stdout" || event.type === "stderr") {
       const throttler = this.getChunkThrottler(event.channelId, event.chatId, adapter);
       const text = `${event.type === "stdout" ? "[stdout]" : "[stderr]"} ${event.payload?.text || ""}`;
@@ -221,9 +339,127 @@ export class ChannelHub {
 
     if (event.type === "complete" || event.type === "error") {
       await this.flushAndDeleteThrottler(event.channelId, event.chatId);
+      await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
+
+      // Close forum topic on completion
+      if (topicId && adapter.closeForumTopic) {
+        adapter.closeForumTopic(event.chatId, topicId).catch(() => {
+          // Non-critical
+        });
+        this.topicMap.delete(`${event.channelId}:${event.chatId}:${event.executionId}`);
+      }
     }
 
     await adapter.sendMessage(event.chatId, formatEvent(event));
+  }
+
+  private async forwardPermissionRequest(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
+    const requestId = event.payload?.permissionRequestId;
+    const toolName = event.payload?.toolName || "unknown";
+    const toolInput = event.payload?.toolInput || {};
+
+    if (!requestId) {
+      this.logger.warn("Permission request missing requestId.", { executionId: event.executionId });
+      return;
+    }
+
+    // Register with the permission bridge
+    const decisionPromise = this.permissionBridge.request({
+      requestId,
+      executionId: event.executionId,
+      channelId: event.channelId,
+      chatId: event.chatId,
+      toolName,
+      toolInput
+    });
+
+    // Send inline keyboard via adapter
+    if (adapter.sendMessageWithMarkup) {
+      const markup = {
+        inline_keyboard: [[
+          { text: "✅ Approve", callback_data: `${PERMISSION_CALLBACK_PREFIX}${requestId}:allow` },
+          { text: "❌ Deny", callback_data: `${PERMISSION_CALLBACK_PREFIX}${requestId}:deny` }
+        ]]
+      };
+
+      await adapter.sendMessageWithMarkup(
+        event.chatId,
+        formatPermissionRequest(toolName, toolInput),
+        markup,
+        { threadId: topicId }
+      );
+    } else {
+      // Fallback: send plain text and auto-deny
+      await adapter.sendMessage(
+        event.chatId,
+        `Permission request for tool "${toolName}" — auto-denied (no inline keyboard support).`
+      );
+      this.permissionBridge.respond(requestId, "deny");
+    }
+
+    // Wait for the decision and emit permission-response event
+    const decision = await decisionPromise;
+    this.eventBus.emit({
+      executionId: event.executionId,
+      channelId: event.channelId,
+      chatId: event.chatId,
+      type: "permission-response",
+      timestamp: Date.now(),
+      payload: {
+        permissionRequestId: requestId,
+        decision
+      }
+    });
+  }
+
+  private async forwardStreamText(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
+    const text = event.payload?.text || "";
+    const draftKey = `${event.channelId}:${event.chatId}:${event.executionId}`;
+
+    let draft = this.streamDrafts.get(draftKey);
+    if (!draft) {
+      draft = { text: "" };
+      this.streamDrafts.set(draftKey, draft);
+    }
+
+    draft.text += text;
+
+    // Throttle edits: only update every ~500 chars or if we haven't sent yet
+    const shouldUpdate = !draft.messageId || draft.text.length % 500 < text.length;
+
+    if (shouldUpdate && adapter.editMessage && draft.messageId) {
+      const displayText = truncate(draft.text, 4000);
+      await adapter.editMessage(event.chatId, draft.messageId, escapeHtml(displayText)).catch(() => {
+        // Edit might fail if message was deleted; non-critical
+      });
+    } else if (!draft.messageId) {
+      // Send initial message
+      if (adapter.sendMessageWithMarkup) {
+        const messageId = await adapter.sendMessageWithMarkup(
+          event.chatId,
+          escapeHtml(truncate(draft.text, 4000)),
+          undefined,
+          { threadId: topicId }
+        );
+        draft.messageId = messageId;
+      } else {
+        await adapter.sendMessage(event.chatId, truncate(draft.text, 3500));
+      }
+    }
+  }
+
+  private async flushStreamDraft(adapter: IMAdapter, channelId: string, chatId: string, executionId: string): Promise<void> {
+    const draftKey = `${channelId}:${chatId}:${executionId}`;
+    const draft = this.streamDrafts.get(draftKey);
+    if (!draft) return;
+
+    // Final edit with complete text
+    if (draft.messageId && adapter.editMessage) {
+      const displayText = truncate(draft.text, 4000);
+      await adapter.editMessage(chatId, draft.messageId, escapeHtml(displayText)).catch(() => {});
+    }
+
+    this.streamDrafts.delete(draftKey);
   }
 
   private getChunkThrottler(channelId: string, chatId: string, adapter: IMAdapter): ChunkThrottler {

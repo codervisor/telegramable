@@ -45,7 +45,7 @@ export interface ChannelConfig {
 
 export interface AgentConfig {
   name: string;
-  runtime?: "cli" | "session-claude" | "session-gemini" | "session-copilot";
+  runtime?: "cli" | "session-claude" | "session-claude-sdk" | "session-gemini" | "session-copilot";
   command: string;
   args?: string[];
   env?: Record<string, string>;
@@ -53,6 +53,12 @@ export interface AgentConfig {
   timeoutMs?: number;
   sessionTimeoutMs?: number;
   maxTurns?: number;
+
+  // Claude SDK-specific options
+  model?: string;
+  systemPrompt?: string;
+  allowedTools?: string[];
+  maxBudgetUsd?: number;
 }
 
 export interface Config {

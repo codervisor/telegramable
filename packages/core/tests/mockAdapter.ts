@@ -21,13 +21,13 @@ export class MockAdapter implements IMAdapter {
     this.handler = undefined;
   }
 
-  async simulateIncoming(message: IMMessage): Promise<void> {
+  async simulateIncoming(message: Partial<IMMessage> & { chatId: string; text: string }): Promise<void> {
     if (!this.handler) {
       throw new Error("Mock adapter not started.");
     }
     this.handler({
-      ...message,
-      channelId: this.id
+      channelId: this.id,
+      ...message
     });
   }
 }
