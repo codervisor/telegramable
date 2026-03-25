@@ -87,10 +87,12 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 
 ### Technology
 
-| Layer | Choice | Reason |
+| Layer | Choice | Status |
 |-------|--------|--------|
-| Transport | WebSocket (ws or Socket.IO) | Real-time bidirectional streaming |
-| UI | React + Tailwind CSS | Already in apps/web |
+| Framework | Next.js 16 (App Router) | Already set up |
+| Components | shadcn/ui (base-nova, neutral) | Initialized — button, input, scroll-area, avatar, separator, tooltip installed |
+| Styling | Tailwind CSS v4 + CSS variables | Already set up, dark mode default |
+| Transport | WebSocket (ws or Socket.IO) | To implement |
 | State | React useState + useReducer | Chat state is local, no need for heavy state management |
 | PWA | next-pwa or manual manifest | Add-to-home-screen on mobile |
 
@@ -120,12 +122,17 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 - [ ] Create new session, switch between sessions
 - [ ] Session history persisted in localStorage or server-side
 
+### Phase 0: Foundation (complete)
+- [x] Initialize shadcn/ui with base-nova style, neutral palette, dark mode
+- [x] Install chat-relevant components (button, input, scroll-area, avatar, separator, tooltip)
+- [x] Set up cn() utility, CSS variables, system font stack
+- [x] Update layout with dark mode default and proper metadata
+
 ### Phase 5: Files & Polish
 - [ ] File upload from browser → agent
 - [ ] File download from agent → browser
 - [ ] Code block rendering with syntax highlighting
 - [ ] PWA manifest for add-to-home-screen
-- [ ] Dark mode (default)
 
 ## Test
 
@@ -141,5 +148,5 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 
 - **Not a Telegram API emulator** — we don't replicate Telegram's API. We implement the same `ChannelAdapter` interface, so the hub treats web and Telegram identically.
 - **Scope**: This spec covers the chat UI only, not the admin/config UI (spec 002). They coexist in `apps/web` under different routes (`/chat` vs `/admin`).
-- **Spec 003 overlap**: That spec planned a full design system setup. For this spec, we use Tailwind directly — shadcn/ui components can be adopted incrementally. We don't need the full design system to ship a chat UI.
+- **Spec 003 overlap**: shadcn/ui is now initialized in apps/web (base-nova style, neutral palette, dark mode). Core components installed. Spec 003's remaining scope (full design system, Storybook, etc.) is deferred — we have what we need to build the chat UI.
 - **PWA**: Adding a web app manifest + service worker makes this installable on mobile home screens, giving a native-app feel without app store distribution.
