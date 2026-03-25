@@ -16,7 +16,6 @@ transitions:
 - status: in-progress
   at: 2026-03-25T15:34:50.750960527Z
 ---
-
 # Telegram AI Agent Proxy — Repositioned Architecture
 
 ## Overview
@@ -95,14 +94,14 @@ Anthropic shipped an official Telegram channel plugin for Claude Code (`/plugin 
 
 ## Plan
 
-- [ ] Migrate Telegram adapter from `node-telegram-bot-api` to grammY
-- [ ] Add `@anthropic-ai/claude-agent-sdk` as core dependency
-- [ ] Implement `SdkClaudeSession` using Agent SDK `query()` with streaming input
-- [ ] Wire `canUseTool` → Telegram inline keyboard → callback query → SDK response
-- [ ] Implement forum topic lifecycle (create on session start, close on complete)
-- [ ] Implement `sendMessageDraft` streaming for real-time token output
-- [ ] Add file upload/download support (user→agent and agent→user)
-- [ ] Update daemon service to ensure always-on operation with SDK sessions
+- [x] Migrate Telegram adapter from `node-telegram-bot-api` to grammY
+- [x] Add `@anthropic-ai/claude-agent-sdk` as core dependency
+- [x] Implement `SdkClaudeSession` using Agent SDK `query()` with streaming input
+- [x] Wire `canUseTool` → Telegram inline keyboard → callback query → SDK response
+- [x] Implement forum topic lifecycle (create on session start, close on complete)
+- [x] Implement `sendMessageDraft` streaming for real-time token output
+- [x] Add file upload/download support (user→agent and agent→user)
+- [x] Update daemon service to ensure always-on operation with SDK sessions
 
 ## Test
 
