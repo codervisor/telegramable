@@ -15,7 +15,7 @@ RUN pnpm install --frozen-lockfile
 COPY packages/core ./packages/core
 COPY apps/cli ./apps/cli
 
-RUN pnpm --filter @cueless/core build
-RUN pnpm --filter @cueless/cli build
+RUN pnpm --filter @telegramable/core build
+RUN pnpm --filter @telegramable/cli build
 
-CMD ["pnpm", "--filter", "@cueless/cli", "start"]
+CMD ["pnpm", "--filter", "@telegramable/cli", "start"]

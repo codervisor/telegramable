@@ -16,7 +16,7 @@ updated_at: 2026-03-20T06:51:26.332170147Z
 
 ## Overview
 
-Chain agents and channels into multi-step workflows. This is the long-term platform play that turns Cueless from a tool into a composable orchestration layer.
+Chain agents and channels into multi-step workflows. This is the long-term platform play that turns Telegramable from a tool into a composable orchestration layer.
 
 **Status: Draft** — Models and frameworks are evolving fast (MCP, Agent SDK, OpenAI Agents). This spec should be revisited as the ecosystem matures to avoid building what becomes native capability.
 
@@ -66,6 +66,6 @@ Lightweight DSL or JSON/YAML workflow definition. Should not reinvent Temporal/A
 ## Notes
 
 - **Risk**: This space is moving fast. MCP tool composition, Agent SDK multi-agent patterns, and LangGraph-style frameworks may make custom workflow engines redundant.
-- **Mitigation**: Keep the abstraction thin. Cueless's value is the IM↔agent bridge, not the orchestration engine. Compose existing tools rather than building a new workflow runtime.
+- **Mitigation**: Keep the abstraction thin. Telegramable's value is the IM↔agent bridge, not the orchestration engine. Compose existing tools rather than building a new workflow runtime.
 - Revisit this spec quarterly against ecosystem developments.
 - Depends on bidirectional communication (spec 014) for human-in-the-loop gates.

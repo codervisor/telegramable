@@ -17,7 +17,7 @@ importers:
 
   apps/cli:
     dependencies:
-      '@cueless/core':
+      '@telegramable/core':
         specifier: workspace:*
         version: link:../../packages/core
       commander:

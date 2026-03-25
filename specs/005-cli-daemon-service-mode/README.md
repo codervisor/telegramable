@@ -8,7 +8,7 @@ tags:
 - service
 - architecture
 depends_on:
-- 001-bootstrap-cueless
+- 001-bootstrap-telegramable
 created_at: 2026-02-24T03:44:29.495796Z
 updated_at: 2026-02-24T05:22:30.286201Z
 transitions:
@@ -18,7 +18,7 @@ transitions:
 # CLI Daemon & Service Mode
 
 > **Status**: planned · **Priority**: high · **Created**: 2026-02-24
-> **North Star**: cueless should be operated as a proper CLI tool — start in foreground, install as a background service, check status — inspired by zeroclaw's UX
+> **North Star**: telegramable should be operated as a proper CLI tool — start in foreground, install as a background service, check status — inspired by zeroclaw's UX
 
 ## Overview
 
@@ -31,14 +31,14 @@ Currently `apps/api/src/index.ts` directly bootstraps and starts everything on p
 This spec introduces a proper CLI entry point with the following commands:
 
 ```
-cueless start              # start in foreground (blocking)
-cueless service install    # install as system service (systemd/launchd)
-cueless service uninstall  # remove system service
-cueless service start      # start background service
-cueless service stop       # stop background service
-cueless service restart    # restart background service
-cueless service status     # show service status
-cueless status             # show runtime status (process & config)
+telegramable start              # start in foreground (blocking)
+telegramable service install    # install as system service (systemd/launchd)
+telegramable service uninstall  # remove system service
+telegramable service start      # start background service
+telegramable service stop       # stop background service
+telegramable service restart    # restart background service
+telegramable service status     # show service status
+telegramable status             # show runtime status (process & config)
 ```
 
 ## Design
@@ -47,7 +47,7 @@ cueless status             # show runtime status (process & config)
 
 ```
 apps/api/src/
-  cli.ts          ← NEW: CLI entry point (commander), bin: "cueless"
+  cli.ts          ← NEW: CLI entry point (commander), bin: "telegramable"
   index.ts        ← REFACTORED: exports startDaemon() function, no top-level side effects
   service/
     index.ts      ← NEW: service manager (systemd/launchd dispatch)
@@ -66,10 +66,10 @@ Uses `commander` to define subcommands:
 ### Service Manager
 
 Auto-detects platform:
-- **macOS**: launchd (`~/Library/LaunchAgents/ai.cueless.plist`)
-- **Linux**: systemd user unit (`~/.config/systemd/user/cueless.service`)
+- **macOS**: launchd (`~/Library/LaunchAgents/ai.telegramable.plist`)
+- **Linux**: systemd user unit (`~/.config/systemd/user/telegramable.service`)
 
-Generated unit files reference the installed binary path (`which cueless` or `node dist/cli.js`).
+Generated unit files reference the installed binary path (`which telegramable` or `node dist/cli.js`).
 
 ### `index.ts` Refactor
 
@@ -84,6 +84,6 @@ Extract all top-level side-effect code into a `startDaemon()` async function tha
 - [x] Create `apps/api/src/service/launchd.ts`: launchd plist management
 - [x] Create `apps/api/src/service/index.ts`: platform auto-detect and dispatch
 - [x] Update `apps/api/package.json`: add `bin` field pointing to `dist/src/cli.js`, update `start` script
-- [x] Verify `cueless start` runs gateway in foreground (existing behavior)
-- [x] Verify `cueless service install && cueless service start` works on macOS (launchd)
-- [x] Verify `cueless status` prints config and process state
+- [x] Verify `telegramable start` runs gateway in foreground (existing behavior)
+- [x] Verify `telegramable service install && telegramable service start` works on macOS (launchd)
+- [x] Verify `telegramable status` prints config and process state

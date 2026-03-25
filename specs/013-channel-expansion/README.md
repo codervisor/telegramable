@@ -14,7 +14,7 @@ updated_at: 2026-03-20T06:48:52.561176949Z
 
 ## Overview
 
-Expand Cueless from Telegram-only to a universal communication bridge. Every mainstream channel humans use should be able to reach AI agents through Cueless.
+Expand Telegramable from Telegram-only to a universal communication bridge. Every mainstream channel humans use should be able to reach AI agents through Telegramable.
 
 The IMAdapter interface and ChannelHub architecture already support multiple adapters — this is implementation work, not architectural change.
 

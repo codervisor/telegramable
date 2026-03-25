@@ -1,8 +1,8 @@
 {
-  "name": "@cueless/core",
+  "name": "@telegramable/core",
   "version": "0.1.0",
   "private": true,
-  "description": "Cueless core — gateway, hub, and agent session runtime",
+  "description": "Telegramable core — gateway, hub, and agent session runtime",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "engines": {

@@ -1,6 +1,6 @@
-# Cueless
+# Telegramable
 
-Cueless is an IM-first control plane that receives commands, dispatches them to a swappable agent runtime, and streams execution status back to IM.
+Telegramable is a Telegram-first AI agent interface — ask your AI (Claude, Gemini, Copilot, etc.) to do things for you via instant messaging. It bridges the gap between mainstream IM experiences (like WeChat, Telegram) and AI coding agents, providing a single continuous conversation instead of fragmented multi-session interactions.
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ cp .env.example .env
 3. Run in development:
 
 ```bash
-pnpm --filter @cueless/cli dev
+pnpm --filter @telegramable/cli dev
 ```
 
 ## Configuration
@@ -44,15 +44,15 @@ pnpm --filter @cueless/cli dev
 Run the mock adapter + mock runtime test:
 
 ```bash
-pnpm --filter @cueless/core test:e2e
+pnpm --filter @telegramable/core test:e2e
 ```
 
 ## Docker
 
 ```bash
-docker build -f apps/cli/Dockerfile -t cueless .
+docker build -f apps/cli/Dockerfile -t telegramable .
 ```
 
 ```bash
-docker run --env-file .env cueless
+docker run --env-file .env telegramable
 ```

@@ -3,13 +3,13 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-const LABEL = "ai.cueless.daemon";
+const LABEL = "ai.telegramable.daemon";
 const PLIST_DIR = join(homedir(), "Library", "LaunchAgents");
 const PLIST_PATH = join(PLIST_DIR, `${LABEL}.plist`);
 
 function getBinPath(): string {
   try {
-    return execSync("which cueless", { encoding: "utf8" }).trim();
+    return execSync("which telegramable", { encoding: "utf8" }).trim();
   } catch {
     // fallback to node running the built cli
     return process.execPath;
@@ -48,10 +48,10 @@ function buildPlist(binPath: string): string {
   <true/>
 
   <key>StandardOutPath</key>
-  <string>${join(homedir(), ".cueless", "logs", "daemon.log")}</string>
+  <string>${join(homedir(), ".telegramable", "logs", "daemon.log")}</string>
 
   <key>StandardErrorPath</key>
-  <string>${join(homedir(), ".cueless", "logs", "daemon.error.log")}</string>
+  <string>${join(homedir(), ".telegramable", "logs", "daemon.error.log")}</string>
 </dict>
 </plist>
 `;
@@ -59,12 +59,12 @@ function buildPlist(binPath: string): string {
 
 export function install(): void {
   mkdirSync(PLIST_DIR, { recursive: true });
-  mkdirSync(join(homedir(), ".cueless", "logs"), { recursive: true });
+  mkdirSync(join(homedir(), ".telegramable", "logs"), { recursive: true });
 
   const binPath = getBinPath();
   writeFileSync(PLIST_PATH, buildPlist(binPath), { encoding: "utf8" });
   console.log(`Installed launchd service: ${PLIST_PATH}`);
-  console.log(`Run: cueless service start`);
+  console.log(`Run: telegramable service start`);
 }
 
 export function uninstall(): void {
@@ -82,7 +82,7 @@ export function uninstall(): void {
 
 export function start(): void {
   if (!existsSync(PLIST_PATH)) {
-    console.error("Service not installed. Run: cueless service install");
+    console.error("Service not installed. Run: telegramable service install");
     process.exit(1);
   }
   execSync(`launchctl load "${PLIST_PATH}"`, { stdio: "inherit" });

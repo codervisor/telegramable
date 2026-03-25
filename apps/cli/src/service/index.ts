@@ -17,7 +17,7 @@ function getManager(): ServiceManager {
   if (process.platform === "linux") {
     return systemd;
   }
-  throw new Error(`Unsupported platform for service management: ${process.platform}. Use 'cueless start' to run in foreground.`);
+  throw new Error(`Unsupported platform for service management: ${process.platform}. Use 'telegramable start' to run in foreground.`);
 }
 
 export const serviceManager: ServiceManager = {

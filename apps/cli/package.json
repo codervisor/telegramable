@@ -1,11 +1,11 @@
 {
-  "name": "@cueless/cli",
+  "name": "@telegramable/cli",
   "version": "0.1.0",
   "private": true,
-  "description": "Cueless CLI — command-line interface and service manager for the cueless daemon",
+  "description": "Telegramable CLI — command-line interface and service manager for the telegramable daemon",
   "main": "dist/cli.js",
   "bin": {
-    "cueless": "dist/cli.js"
+    "telegramable": "dist/cli.js"
   },
   "engines": {
     "node": ">=22"
@@ -16,7 +16,7 @@
     "start": "node dist/cli.js start"
   },
   "dependencies": {
-    "@cueless/core": "workspace:*",
+    "@telegramable/core": "workspace:*",
     "commander": "^14.0.3"
   },
   "devDependencies": {

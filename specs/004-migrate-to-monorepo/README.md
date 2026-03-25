@@ -20,11 +20,11 @@ transitions:
 # Migrate To Monorepo
 
 > **Status**: complete · **Priority**: high · **Created**: 2026-02-23  
-> **North Star**: Restructure cueless from a single-package Node app into a pnpm + Turborepo monorepo that hosts the backend and future frontend packages side-by-side.
+> **North Star**: Restructure telegramable from a single-package Node app into a pnpm + Turborepo monorepo that hosts the backend and future frontend packages side-by-side.
 
 ## Overview
 
-cueless currently lives as a single `package.json` at the repo root with all backend source code under `src/`. Spec 003 (UI Framework Setup) already designs a monorepo layout with `apps/web` and `packages/ui`, but the structural migration has not been done.
+telegramable currently lives as a single `package.json` at the repo root with all backend source code under `src/`. Spec 003 (UI Framework Setup) already designs a monorepo layout with `apps/web` and `packages/ui`, but the structural migration has not been done.
 
 This spec captures the work to:
 1. Convert the repo root into a pnpm workspace managed by Turborepo.
@@ -39,9 +39,9 @@ Doing this migration as a dedicated step (before 003) avoids interleaving struct
 ### Target layout
 
 ```
-cueless/
+telegramable/
 ├── apps/
-│   └── api/                  # current src/ backend (Fastify/cueless core)
+│   └── api/                  # current src/ backend (Fastify/telegramable core)
 │       ├── src/
 │       ├── tests/
 │       ├── Dockerfile
@@ -63,7 +63,7 @@ cueless/
 | -------------------- | ------------------- | --------------------------------------- |
 | Workspace manager    | pnpm workspaces     | already used in repo                    |
 | Build orchestration  | Turborepo           | spec 003 already plans `turbo.json`     |
-| Backend package name | `@cueless/api`      | namespaced for future cross-referencing |
+| Backend package name | `@telegramable/api`      | namespaced for future cross-referencing |
 | Shared tsconfig      | `packages/tsconfig` | single source for compiler options      |
 
 ### `pnpm-workspace.yaml`
@@ -89,7 +89,7 @@ packages:
 ```
 
 ### `apps/api/package.json` changes
-- `name`: `@cueless/api`
+- `name`: `@telegramable/api`
 - scripts stay the same (`build`, `dev`, `start`, `test`)
 - Dependencies move from root `package.json` to `apps/api/package.json`
 - Root `package.json` keeps only workspace-level dev deps (turbo, typescript, etc.)
@@ -101,13 +101,13 @@ packages:
 - [x] Create `turbo.json` with `build`, `dev`, `test`, `lint` tasks
 - [x] Create `apps/api/` directory structure and move `src/`, `tests/` into it
 - [x] Move `Dockerfile` into `apps/api/`
-- [x] Create `apps/api/package.json` (name `@cueless/api`, copy relevant deps from root)
+- [x] Create `apps/api/package.json` (name `@telegramable/api`, copy relevant deps from root)
 - [x] Create `apps/api/tsconfig.json` extending root config
 - [x] Update root `package.json`: remove moved deps, add workspace scripts delegating to turbo
 - [x] Create `packages/tsconfig/` with base `tsconfig.json` and `package.json`
 - [x] Update all import paths and build output references if changed
 - [x] Verify `pnpm install` resolves workspace correctly
-- [x] Verify `pnpm -F @cueless/api test` runs existing tests green
+- [x] Verify `pnpm -F @telegramable/api test` runs existing tests green
 - [x] Update Dockerfile `COPY` / `WORKDIR` paths for new layout
 - [x] Update CI workflow (if any) to use `turbo run build test` (no applicable CI workflow changes required)
 

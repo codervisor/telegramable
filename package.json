@@ -1,8 +1,8 @@
 {
-  "name": "cueless",
+  "name": "telegramable",
   "version": "0.1.0",
   "private": true,
-  "description": "IM-first control layer for dispatching agent runtimes",
+  "description": "Telegram-first AI agent interface — ask your AI to do things via instant messaging",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22"
@@ -10,9 +10,9 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
-    "start": "pnpm --filter @cueless/cli start",
+    "start": "pnpm --filter @telegramable/cli start",
     "test": "turbo run test",
-    "test:e2e": "pnpm --filter @cueless/core test:e2e",
+    "test:e2e": "pnpm --filter @telegramable/core test:e2e",
     "lint": "turbo run lint"
   },
   "devDependencies": {

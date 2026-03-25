@@ -8,7 +8,7 @@ tags:
 - multi-channel
 - agent-runtime
 depends_on:
-- 001-bootstrap-cueless
+- 001-bootstrap-telegramable
 - 005-cli-daemon-service-mode
 created_at: 2026-02-24T04:37:33.701617Z
 updated_at: 2026-02-24T05:41:34.557762Z
@@ -23,11 +23,11 @@ transitions:
 # Multi-Channel Agent Hub
 
 > **Status**: planned · **Priority**: high · **Created**: 2026-02-24
-> **North Star**: cueless is the central hub — IM channels flow in, agent runtimes execute, responses flow back out to the originating channel.
+> **North Star**: telegramable is the central hub — IM channels flow in, agent runtimes execute, responses flow back out to the originating channel.
 
 ## Overview
 
-Today cueless wires a single `IMAdapter` to a single `Runtime`. This covers the bootstrapped use case, but the product vision is broader: cueless should act as an **event-hub** that aggregates inbound messages from multiple IM channels simultaneously and dispatches them to the most appropriate local agent runtime (Claude, Copilot, Codex, Gemini, opencode, etc.).
+Today telegramable wires a single `IMAdapter` to a single `Runtime`. This covers the bootstrapped use case, but the product vision is broader: telegramable should act as an **event-hub** that aggregates inbound messages from multiple IM channels simultaneously and dispatches them to the most appropriate local agent runtime (Claude, Copilot, Codex, Gemini, opencode, etc.).
 
 **Problems with the current design:**
 - `Gateway` is 1:1 — one adapter, one runtime, hardwired at startup

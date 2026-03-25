@@ -8,13 +8,13 @@ tags:
 - configuration
 - scalability
 depends_on:
-- 001-bootstrap-cueless
+- 001-bootstrap-telegramable
 - 003-ui-framework-setup
 - 004-migrate-to-monorepo
 created_at: 2026-01-28T15:09:13.024304Z
 updated_at: 2026-02-23T02:17:27.584902Z
 dependencies:
-- 001-bootstrap-cueless
+- 001-bootstrap-telegramable
 ---
 
 # Runtime Config Web UI
@@ -48,7 +48,7 @@ sequenceDiagram
     participant WebUI as Web UI
     participant API as Config API
     participant Store as Config Store
-    participant Gateway as cueless Gateway
+    participant Gateway as telegramable Gateway
     participant Runtime as Agent Runtime
 
     Admin->>WebUI: Open /admin/runtimes

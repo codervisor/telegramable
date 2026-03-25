@@ -13,13 +13,13 @@ depends_on:
 created_at: 2026-01-28T15:16:36.955914Z
 updated_at: 2026-02-23T02:17:27.631382Z
 dependencies:
-- 001-bootstrap-cueless
+- 001-bootstrap-telegramable
 ---
 
 # UI Framework Setup
 
 > **Status**: planned · **Priority**: high · **Created**: 2026-01-28  
-> **North Star**: Establish a modern, professional UI foundation for cueless admin interfaces using Next.js + shadcn/ui + Tailwind CSS
+> **North Star**: Establish a modern, professional UI foundation for telegramable admin interfaces using Next.js + shadcn/ui + Tailwind CSS
 
 ## Overview
 
@@ -30,7 +30,7 @@ Before building specific admin features like runtime configuration, we need a so
 - Production-ready build pipeline
 - Developer experience with hot reload
 
-This spec establishes the frontend architecture as a separate Next.js application within the cueless monorepo, properly integrated with the existing backend API.
+This spec establishes the frontend architecture as a separate Next.js application within the telegramable monorepo, properly integrated with the existing backend API.
 
 **Design References:**
 - Vercel Dashboard (clean, minimal, excellent spacing)
@@ -42,7 +42,7 @@ This spec establishes the frontend architecture as a separate Next.js applicatio
 ### Architecture
 
 ```
-cueless/
+telegramable/
 ├── apps/
 │   └── web/                    # Next.js 15 App Router
 │       ├── app/                # Routes & layouts

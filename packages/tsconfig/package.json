@@ -1,5 +1,5 @@
 {
-  "name": "@cueless/tsconfig",
+  "name": "@telegramable/tsconfig",
   "version": "0.1.0",
   "private": true,
   "files": [

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { loadConfig, loadEnv, startDaemon } from "@cueless/core";
+import { loadConfig, loadEnv, startDaemon } from "@telegramable/core";
 import { serviceManager } from "./service";
 
 const program = new Command();
 
 program
-  .name("cueless")
-  .description("Cueless — IM-first control plane for autonomous agents")
+  .name("telegramable")
+  .description("Telegramable — Telegram-first AI agent interface")
   .version("0.1.0");
 
 // ─── start / daemon ───────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ program
     loadEnv();
     const config = loadConfig();
 
-    console.log("\ncueless status\n");
+    console.log("\ntelegramable status\n");
     console.log(`  Channels configured : ${config.channels.length}`);
     console.log(`  Agents configured   : ${config.agents.length}`);
     console.log(`  Default agent       : ${config.defaultAgent ?? "(none)"}`);
@@ -53,7 +53,7 @@ program
 
 const service = program
   .command("service")
-  .description("Manage the cueless background service");
+  .description("Manage the telegramable background service");
 
 service
   .command("install")

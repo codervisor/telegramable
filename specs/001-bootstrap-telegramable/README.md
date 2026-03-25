@@ -14,10 +14,10 @@ transitions:
   at: 2026-01-28T14:19:17.768595Z
 ---
 
-# Bootstrap Cueless
+# Bootstrap Telegramable
 
 > **Status**: complete · **Priority**: high · **Created**: 2026-01-28
-> **North Star**: cueless is the control plane between human intent and autonomous agents — delivered through IM.
+> **North Star**: telegramable is the control plane between human intent and autonomous agents — delivered through IM.
 
 ## Overview
 
@@ -39,7 +39,7 @@ High-level design details and flow are outlined below.
 sequenceDiagram
     participant User
     participant IM as IM Platform
-    participant Gateway as cueless Gateway
+    participant Gateway as telegramable Gateway
     participant EventStream as Event Stream
     participant Runtime as Agent Runtime
     participant Adapters as Runtime Adapters

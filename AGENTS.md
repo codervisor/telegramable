@@ -1,4 +1,4 @@
-# cueless
+# telegramable
 
 ## Skills
 
@@ -17,10 +17,10 @@ This project uses the Agent Skills framework for domain-specific guidance.
 - **Key principles**:
   - Use pnpm (never npm/yarn)
   - Node.js >=22 required
-  - Packages use `@cueless/` scope
+  - Packages use `@telegramable/` scope
 
 ## Project-Specific Rules
 
 - **Package manager**: pnpm only, no package-lock.json
 - **Monorepo**: apps/ for deployables, packages/ for shared libs
-- **Naming**: All packages use `@cueless/` scope
+- **Naming**: All packages use `@telegramable/` scope

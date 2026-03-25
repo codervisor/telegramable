@@ -22,11 +22,11 @@ transitions:
 # Agent Session Runtime
 
 > **Status**: planned · **Priority**: high · **Created**: 2026-02-24
-> **North Star**: Deliver stateful, multi-turn AI agent sessions over any IM channel — cueless opens a persistent session per chat, executes requests through a local AI CLI, and returns a single clean reply.
+> **North Star**: Deliver stateful, multi-turn AI agent sessions over any IM channel — telegramable opens a persistent session per chat, executes requests through a local AI CLI, and returns a single clean reply.
 
 ## Overview
 
-The current `CliRuntime` spawns a fresh, stateless process for every message. This umbrella spec tracks the full work to upgrade cueless with proper agent session support:
+The current `CliRuntime` spawns a fresh, stateless process for every message. This umbrella spec tracks the full work to upgrade telegramable with proper agent session support:
 
 - Persistent conversation state across messages
 - Agent-specific invocation protocols (Claude Code, Gemini CLI, Copilot CLI)

@@ -1,15 +1,15 @@
 ---
 name: development
-description: Development conventions and tooling for the cueless monorepo. Use when working on code, dependencies, or builds.
+description: Development conventions and tooling for the telegramable monorepo. Use when working on code, dependencies, or builds.
 compatibility: Requires pnpm >=9.0 and Node.js >=22
 metadata:
-  author: cueless
+  author: telegramable
   version: 0.1.0
 ---
 
 # Development Skill
 
-Standards and conventions for developing in the cueless pnpm monorepo.
+Standards and conventions for developing in the telegramable pnpm monorepo.
 
 ## When to Use This Skill
 
@@ -22,11 +22,11 @@ Activate this skill when:
 ## Monorepo Structure
 
 ```
-cueless/
+telegramable/
 ├── apps/           # Deployable applications
-│   └── web/        # @cueless/web - Next.js frontend
+│   └── web/        # @telegramable/web - Next.js frontend
 ├── packages/       # Shared libraries
-│   └── ui/         # @cueless/ui - UI components
+│   └── ui/         # @telegramable/ui - UI components
 ├── src/            # Root package source (core runtime)
 ├── specs/          # LeanSpec specifications
 └── tests/          # E2E and integration tests
@@ -34,9 +34,9 @@ cueless/
 
 ## Package Naming
 
-All workspace packages use the `@cueless/` scope:
-- `@cueless/web` - Web application
-- `@cueless/ui` - UI component library
+All workspace packages use the `@telegramable/` scope:
+- `@telegramable/web` - Web application
+- `@telegramable/ui` - UI component library
 
 ## Core Tooling
 
@@ -68,21 +68,21 @@ pnpm test:e2e
 
 ```bash
 # Run command in specific package
-pnpm --filter @cueless/web dev
-pnpm --filter @cueless/ui build
+pnpm --filter @telegramable/web dev
+pnpm --filter @telegramable/ui build
 
 # Run command in all packages
 pnpm -r build
 
 # Add dependency to specific package
-pnpm --filter @cueless/web add <package>
+pnpm --filter @telegramable/web add <package>
 
 # Add shared dependency to workspace root
 pnpm add -w <package>
 
 # Add dev dependency
 pnpm add -D <package>
-pnpm --filter @cueless/web add -D <package>
+pnpm --filter @telegramable/web add -D <package>
 ```
 
 ## Dependency Management
@@ -96,10 +96,10 @@ pnpm --filter @cueless/web add -D <package>
 
 ### Adding Internal Dependencies
 
-To use `@cueless/ui` in `@cueless/web`:
+To use `@telegramable/ui` in `@telegramable/web`:
 
 ```bash
-pnpm --filter @cueless/web add @cueless/ui
+pnpm --filter @telegramable/web add @telegramable/ui
 ```
 
 This creates a `workspace:*` reference in package.json.
@@ -117,7 +117,7 @@ pnpm init
 Update package.json:
 ```json
 {
-  "name": "@cueless/new-app",
+  "name": "@telegramable/new-app",
   "private": true
 }
 ```
@@ -133,7 +133,7 @@ pnpm init
 Update package.json:
 ```json
 {
-  "name": "@cueless/new-lib"
+  "name": "@telegramable/new-lib"
 }
 ```
 

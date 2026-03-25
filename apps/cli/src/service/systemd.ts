@@ -3,13 +3,13 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-const SERVICE_NAME = "cueless";
+const SERVICE_NAME = "telegramable";
 const UNIT_DIR = join(homedir(), ".config", "systemd", "user");
 const UNIT_PATH = join(UNIT_DIR, `${SERVICE_NAME}.service`);
 
 function getBinPath(): string {
   try {
-    return execSync("which cueless", { encoding: "utf8" }).trim();
+    return execSync("which telegramable", { encoding: "utf8" }).trim();
   } catch {
     return process.execPath;
   }
@@ -23,7 +23,7 @@ function buildUnit(binPath: string): string {
     : `${binPath} start`;
 
   return `[Unit]
-Description=Cueless IM Gateway Daemon
+Description=Telegramable IM Gateway Daemon
 After=network.target
 
 [Service]
@@ -31,8 +31,8 @@ Type=simple
 ExecStart=${execStart}
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:${join(homedir(), ".cueless", "logs", "daemon.log")}
-StandardError=append:${join(homedir(), ".cueless", "logs", "daemon.error.log")}
+StandardOutput=append:${join(homedir(), ".telegramable", "logs", "daemon.log")}
+StandardError=append:${join(homedir(), ".telegramable", "logs", "daemon.error.log")}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 
 [Install]
@@ -42,14 +42,14 @@ WantedBy=default.target
 
 export function install(): void {
   mkdirSync(UNIT_DIR, { recursive: true });
-  mkdirSync(join(homedir(), ".cueless", "logs"), { recursive: true });
+  mkdirSync(join(homedir(), ".telegramable", "logs"), { recursive: true });
 
   const binPath = getBinPath();
   writeFileSync(UNIT_PATH, buildUnit(binPath), { encoding: "utf8" });
   execSync("systemctl --user daemon-reload", { stdio: "inherit" });
   execSync(`systemctl --user enable ${SERVICE_NAME}`, { stdio: "inherit" });
   console.log(`Installed systemd user service: ${UNIT_PATH}`);
-  console.log(`Run: cueless service start`);
+  console.log(`Run: telegramable service start`);
 }
 
 export function uninstall(): void {

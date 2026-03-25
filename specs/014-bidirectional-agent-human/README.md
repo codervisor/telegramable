@@ -14,7 +14,7 @@ updated_at: 2026-03-20T06:48:52.584833610Z
 
 ## Overview
 
-Currently Cueless is human→agent only. This spec adds agent→human flow: external systems and agents can push messages into Cueless for delivery to specific IM channels/chats.
+Currently Telegramable is human→agent only. This spec adds agent→human flow: external systems and agents can push messages into Telegramable for delivery to specific IM channels/chats.
 
 This is a quick win — the ChannelHub already has `sendMessage` on every adapter. We just need an inbound API to trigger it.
 
@@ -59,7 +59,7 @@ Extend the existing session model so agents can start conversations:
 - [ ] API key authentication and per-channel permissions
 - [ ] `ChannelHub.notify()` method for programmatic sends
 - [ ] Reply-tracking for human-in-the-loop flows
-- [ ] CLI command: `cueless notify <channel> <chat> <message>`
+- [ ] CLI command: `telegramable notify <channel> <chat> <message>`
 
 ## Test
 

@@ -24,7 +24,7 @@ transitions:
 
 ## Overview
 
-The Gemini CLI supports stateful chat sessions identified by a chat ID. After the first call, subsequent calls pass `--chat-id <id>` to resume the same session. Like `ClaudeSession`, `GeminiSession` delegates all context management to the CLI — cueless stores only the short session identifier.
+The Gemini CLI supports stateful chat sessions identified by a chat ID. After the first call, subsequent calls pass `--chat-id <id>` to resume the same session. Like `ClaudeSession`, `GeminiSession` delegates all context management to the CLI — telegramable stores only the short session identifier.
 
 This spec builds on the core session infrastructure from spec 007 and produces a concrete `GeminiSession` implementation.
 
