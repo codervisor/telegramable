@@ -42,7 +42,7 @@ apps/web — Next.js
   ├─ /api/ws         — WebSocket endpoint (or standalone WS server)
   │
   ▼
-WebChannelAdapter (implements ChannelAdapter interface)
+WebAdapter (implements IMAdapter interface)
   │
   ▼
 Hub / Router — same as Telegram path
@@ -53,8 +53,8 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 
 ### Key Components
 
-**1. WebChannelAdapter** (`packages/core/src/gateway/webAdapter.ts`)
-- Implements the same `ChannelAdapter` interface as `telegramAdapter`
+**1. WebAdapter** (`packages/core/src/gateway/webAdapter.ts`)
+- Implements the `IMAdapter` interface (same as `telegramAdapter`)
 - Manages WebSocket connections (one per browser session)
 - Translates hub events → WebSocket messages and vice versa
 - Supports: text messages, streaming tokens, inline actions (approve/deny), file upload/download
@@ -98,10 +98,16 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 
 ## Plan
 
+### Phase 0: Foundation (complete)
+- [x] Initialize shadcn/ui with base-nova style, neutral palette, dark mode
+- [x] Install chat-relevant components (button, input, scroll-area, avatar, separator, tooltip)
+- [x] Set up cn() utility, CSS variables, system font stack
+- [x] Update layout with dark mode default and proper metadata
+
 ### Phase 1: WebSocket Infrastructure
 - [ ] Add WebSocket server to apps/web (Next.js custom server or standalone)
 - [ ] Define message protocol types in `packages/core`
-- [ ] Implement `WebChannelAdapter` matching `ChannelAdapter` interface
+- [ ] Implement `WebAdapter` implementing `IMAdapter` interface
 - [ ] Register web adapter in hub alongside Telegram adapter
 
 ### Phase 2: Chat UI Shell
@@ -122,12 +128,6 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 - [ ] Create new session, switch between sessions
 - [ ] Session history persisted in localStorage or server-side
 
-### Phase 0: Foundation (complete)
-- [x] Initialize shadcn/ui with base-nova style, neutral palette, dark mode
-- [x] Install chat-relevant components (button, input, scroll-area, avatar, separator, tooltip)
-- [x] Set up cn() utility, CSS variables, system font stack
-- [x] Update layout with dark mode default and proper metadata
-
 ### Phase 5: Files & Polish
 - [ ] File upload from browser → agent
 - [ ] File download from agent → browser
@@ -146,7 +146,7 @@ Agent Sessions (Claude SDK, Gemini, Copilot, etc.)
 
 ## Notes
 
-- **Not a Telegram API emulator** — we don't replicate Telegram's API. We implement the same `ChannelAdapter` interface, so the hub treats web and Telegram identically.
+- **Not a Telegram API emulator** — we don't replicate Telegram's API. We implement the same `IMAdapter` interface, so the hub treats web and Telegram identically.
 - **Scope**: This spec covers the chat UI only, not the admin/config UI (spec 002). They coexist in `apps/web` under different routes (`/chat` vs `/admin`).
 - **Spec 003 overlap**: shadcn/ui is now initialized in apps/web (base-nova style, neutral palette, dark mode). Core components installed. Spec 003's remaining scope (full design system, Storybook, etc.) is deferred — we have what we need to build the chat UI.
 - **PWA**: Adding a web app manifest + service worker makes this installable on mobile home screens, giving a native-app feel without app store distribution.
