@@ -6,7 +6,7 @@ FROM base AS builder
 WORKDIR /app
 
 # Install deps (separate layer for caching)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json tsconfig.json ./
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/core/package.json ./packages/core/package.json
@@ -23,7 +23,7 @@ RUN pnpm --filter @telegramable/core build && \
     pnpm --filter @telegramable/web build
 
 # Create self-contained CLI bundle (resolves workspace symlinks)
-RUN pnpm deploy --legacy --filter @telegramable/cli --prod /deploy/cli
+RUN pnpm deploy --filter @telegramable/cli --prod /deploy/cli
 
 # ---- Run ----
 FROM node:22-alpine AS runner
