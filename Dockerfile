@@ -30,6 +30,9 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
 # Web — Next.js standalone output
 COPY --from=builder /app/apps/web/.next/standalone ./web/
 COPY --from=builder /app/apps/web/.next/static ./web/apps/web/.next/static
