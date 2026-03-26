@@ -1,18 +1,29 @@
 import assert from "assert";
 import { EventBus } from "../src/events/eventBus";
-import { Gateway } from "../src/gateway/gateway";
+import { ChannelHub } from "../src/hub/hub";
 import { createLogger } from "../src/logging";
 import { MockAdapter } from "./mockAdapter";
 import { MockRuntime } from "./mockRuntime";
+import { Router } from "../src/hub/router";
+import { IMMessage } from "../src/gateway/types";
+
+class MockRouter implements Router {
+  constructor(private readonly runtime: MockRuntime) {}
+
+  select(message: IMMessage) {
+    return { runtime: this.runtime, message };
+  }
+}
 
 const run = async () => {
   const logger = createLogger("error");
   const adapter = new MockAdapter();
   const runtime = new MockRuntime();
   const eventBus = new EventBus();
-  const gateway = new Gateway(adapter, runtime, eventBus, logger);
+  const router = new MockRouter(runtime);
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
 
-  await gateway.start();
+  await hub.start();
 
   await adapter.simulateIncoming({
     channelId: "mock",
@@ -23,13 +34,14 @@ const run = async () => {
 
   await new Promise((resolve) => setTimeout(resolve, 10));
 
-  assert.ok(adapter.sentMessages.length >= 2, "Expected messages to be sent.");
-  assert.ok(
-    adapter.sentMessages.some((msg) => msg.text.includes("Execution complete")),
-    "Expected completion message."
+  // No verbose messages should be sent (start/stdout/complete without response are suppressed)
+  assert.strictEqual(
+    adapter.sentMessages.length,
+    0,
+    `Expected no verbose messages, got: ${JSON.stringify(adapter.sentMessages)}`
   );
 
-  await gateway.stop();
+  await hub.stop();
 };
 
 run().catch((error) => {

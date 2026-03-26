@@ -41,20 +41,14 @@ export const parseBuiltinCommand = (text: string): BuiltinCommand => {
   return null;
 };
 
-const formatEvent = (event: ExecutionEvent): string => {
+const formatEvent = (event: ExecutionEvent): string | null => {
   switch (event.type) {
-    case "start":
-      return "Started execution.";
-    case "stdout":
-      return `STDOUT: ${truncate(event.payload?.text || "", 3500)}`;
-    case "stderr":
-      return `STDERR: ${truncate(event.payload?.text || "", 3500)}`;
     case "complete":
-      return event.payload?.response || "Execution complete.";
+      return event.payload?.response || null;
     case "error":
-      return `Execution error: ${event.payload?.reason || "unknown"}`;
+      return `Error: ${event.payload?.reason || "unknown"}`;
     default:
-      return "Execution update.";
+      return null;
   }
 };
 
@@ -190,13 +184,7 @@ export class ChannelHub {
 
     if (adapter) {
       // Try to create a forum topic for this execution
-      const topicId = await this.tryCreateForumTopic(adapter, message.chatId, executionId, message.text || "New task");
-
-      if (topicId) {
-        await adapter.sendMessage(message.chatId, `Received command. Execution ID: ${executionId}`);
-      } else {
-        await adapter.sendMessage(message.chatId, `Received command. Execution ID: ${executionId}`);
-      }
+      await this.tryCreateForumTopic(adapter, message.chatId, executionId, message.text || "New task");
     }
 
     this.logger.info("Received message.", {
@@ -330,13 +318,6 @@ export class ChannelHub {
       return;
     }
 
-    if (event.type === "stdout" || event.type === "stderr") {
-      const throttler = this.getChunkThrottler(event.channelId, event.chatId, adapter);
-      const text = `${event.type === "stdout" ? "[stdout]" : "[stderr]"} ${event.payload?.text || ""}`;
-      throttler.push(text);
-      return;
-    }
-
     if (event.type === "complete" || event.type === "error") {
       await this.flushAndDeleteThrottler(event.channelId, event.chatId);
       await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
@@ -350,7 +331,10 @@ export class ChannelHub {
       }
     }
 
-    await adapter.sendMessage(event.chatId, formatEvent(event));
+    const text = formatEvent(event);
+    if (text) {
+      await adapter.sendMessage(event.chatId, text);
+    }
   }
 
   private async forwardPermissionRequest(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
