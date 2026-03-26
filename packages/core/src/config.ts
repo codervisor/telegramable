@@ -39,6 +39,7 @@ export interface ChannelConfig {
   type: ChannelType;
   id: string;
   defaultAgent?: string;
+  allowedUserIds?: string[];
   [key: string]: unknown;
 }
 
@@ -92,7 +93,11 @@ const parseChannels = (): ChannelConfig[] => {
     throw new Error("TELEGRAM_CHANNEL_ID is required when TELEGRAM_BOT_TOKEN is set.");
   }
 
-  return [{ type: "telegram", id, token }];
+  const allowedUserIds = process.env.ALLOWED_USER_IDS
+    ? process.env.ALLOWED_USER_IDS.split(",").map(s => s.trim()).filter(Boolean)
+    : undefined;
+
+  return [{ type: "telegram", id, token, allowedUserIds }];
 };
 
 const parseAgents = (): AgentConfig[] => {
