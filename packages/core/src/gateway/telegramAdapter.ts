@@ -8,8 +8,14 @@ export class TelegramAdapter implements IMAdapter {
   constructor(
     public readonly id: string,
     private readonly token: string,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly allowedUserIds?: string[]
   ) { }
+
+  private isUserAllowed(userId: string | undefined): boolean {
+    if (!this.allowedUserIds || this.allowedUserIds.length === 0) return true;
+    return userId !== undefined && this.allowedUserIds.includes(userId);
+  }
 
   async start(onMessage: (message: IMMessage) => void): Promise<void> {
     this.bot = new Bot(this.token);
@@ -29,6 +35,11 @@ export class TelegramAdapter implements IMAdapter {
         threadId: message.message_thread_id,
         raw: message
       };
+
+      if (!this.isUserAllowed(payload.userId)) {
+        this.logger.debug("Telegram message ignored (user not allowed).", { channelId: this.id, userId: payload.userId });
+        return;
+      }
 
       this.logger.debug("Telegram message received.", { channelId: this.id, chatId: payload.chatId });
       onMessage(payload);
@@ -53,6 +64,11 @@ export class TelegramAdapter implements IMAdapter {
         raw: message
       };
 
+      if (!this.isUserAllowed(payload.userId)) {
+        this.logger.debug("Telegram document ignored (user not allowed).", { channelId: this.id, userId: payload.userId });
+        return;
+      }
+
       this.logger.debug("Telegram document received.", { channelId: this.id, chatId: payload.chatId });
       onMessage(payload);
     });
@@ -73,6 +89,11 @@ export class TelegramAdapter implements IMAdapter {
         callbackQueryId: query.id,
         raw: query
       };
+
+      if (!this.isUserAllowed(payload.userId)) {
+        this.logger.debug("Telegram callback query ignored (user not allowed).", { channelId: this.id, userId: payload.userId });
+        return;
+      }
 
       this.logger.debug("Telegram callback query received.", { channelId: this.id, chatId: payload.chatId });
       onMessage(payload);

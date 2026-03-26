@@ -16,7 +16,7 @@ const createAdapter = (channel: ChannelConfig, logger: ReturnType<typeof createL
       throw new Error(`Telegram channel '${channel.id}' is missing token.`);
     }
 
-    return new TelegramAdapter(channel.id, channel.token, logger);
+    return new TelegramAdapter(channel.id, channel.token, logger, channel.allowedUserIds);
   }
 
   throw new Error(`Unsupported channel type '${channel.type}' for channel '${channel.id}'.`);
