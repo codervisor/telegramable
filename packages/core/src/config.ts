@@ -81,16 +81,40 @@ const parseLogLevel = (value?: string): Config["logLevel"] => {
   }
 };
 
+/**
+ * Validate that a channel ID is a well-formed identifier.
+ * Must be 1–64 characters, lowercase alphanumeric with hyphens allowed (kebab-case).
+ * Cannot start or end with a hyphen, and no consecutive hyphens.
+ */
+const validateChannelId = (id: string): string | undefined => {
+  if (id.length === 0) return "TELEGRAM_CHANNEL_ID must not be empty.";
+  if (id.length > 64) return `TELEGRAM_CHANNEL_ID must be at most 64 characters (got ${id.length}).`;
+  if (id !== id.toLowerCase()) return `TELEGRAM_CHANNEL_ID must be lowercase: "${id}". Use "${id.toLowerCase()}" instead.`;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+    return `TELEGRAM_CHANNEL_ID must be kebab-case (lowercase letters, digits, single hyphens): "${id}".`;
+  }
+  return undefined;
+};
+
 const parseChannels = (): ChannelConfig[] => {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const id = process.env.TELEGRAM_CHANNEL_ID;
+  const rawId = process.env.TELEGRAM_CHANNEL_ID;
 
   if (!token) {
     return [];
   }
 
-  if (!id) {
-    throw new Error("TELEGRAM_CHANNEL_ID is required when TELEGRAM_BOT_TOKEN is set.");
+  if (!rawId || !rawId.trim()) {
+    throw new Error(
+      "TELEGRAM_CHANNEL_ID is required when TELEGRAM_BOT_TOKEN is set. " +
+      "Set a kebab-case identifier, e.g. TELEGRAM_CHANNEL_ID=my-bot"
+    );
+  }
+
+  const id = rawId.trim();
+  const validationError = validateChannelId(id);
+  if (validationError) {
+    throw new Error(validationError);
   }
 
   const allowedUserIds = process.env.ALLOWED_USER_IDS
