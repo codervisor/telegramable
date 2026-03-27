@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "start": "pnpm --filter @telegramable/cli start",
     "test": "turbo run test",
-    "test:e2e": "pnpm --filter @telegramable/core test:e2e",
+    "test:integration": "pnpm --filter @telegramable/core test:integration",
     "lint": "turbo run lint"
   },
   "devDependencies": {

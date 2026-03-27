@@ -1,4 +1,4 @@
-name: E2E
+name: Integration
 
 on:
   # Run manually or on schedule
@@ -8,11 +8,11 @@ on:
     - cron: "0 6 * * *"
 
 concurrency:
-  group: e2e
+  group: integration
   cancel-in-progress: true
 
 jobs:
-  e2e:
+  integration:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,8 +37,8 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Run E2E tests
-        run: pnpm test:e2e
+      - name: Run integration tests
+        run: pnpm test:integration
         env:
-          E2E_RUNTIME_COMMAND: "echo"
-          E2E_TIMEOUT_MS: "10000"
+          INTEGRATION_RUNTIME_COMMAND: "echo"
+          INTEGRATION_TIMEOUT_MS: "10000"
