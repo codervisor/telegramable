@@ -173,6 +173,9 @@ export class CliRuntime implements Runtime {
       });
 
       if (child.stdin) {
+        child.stdin.on("error", (error: Error) => {
+          this.logger.warn("stdin write failed.", { executionId, error: error.message });
+        });
         child.stdin.write(message.text);
         child.stdin.write("\n");
         child.stdin.end();
