@@ -1,17 +1,14 @@
 -----
-
 status: draft
 created: 2026-03-27
 priority: critical
 tags:
-
 - memory
 - persistence
 - telegram
 - architecture
   depends_on:
 - 016-telegram-ai-agent-proxy
-
 -----
 
 # Persistent Memory via Telegram
