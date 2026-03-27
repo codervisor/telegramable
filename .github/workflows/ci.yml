@@ -49,3 +49,9 @@ jobs:
 
       - name: Unit tests
         run: pnpm --filter @telegramable/core test:unit
+
+      - name: Integration tests
+        run: pnpm test:integration
+        env:
+          INTEGRATION_RUNTIME_COMMAND: "echo"
+          INTEGRATION_TIMEOUT_MS: "10000"
