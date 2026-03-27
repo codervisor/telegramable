@@ -7,7 +7,7 @@ tags:
 - persistence
 - telegram
 - architecture
-  depends_on:
+depends_on:
 - 016-telegram-ai-agent-proxy
 ---
 
