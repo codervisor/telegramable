@@ -2,24 +2,27 @@
  * Real end-to-end test against the Telegram Bot API.
  *
  * Boots the full stack in-process (TelegramAdapter → ChannelHub → Runtime),
- * sends a message via a *separate* sender bot, and verifies the pipeline
- * completes by observing EventBus events.
+ * sends a message via a Telegram **user account** (MTProto), and verifies the
+ * pipeline completes by observing EventBus events.
  *
- * Two bots are required because Telegram bots cannot receive their own
- * messages via getUpdates. The sender bot posts a message to the test chat
- * and the main bot picks it up through long-polling.
+ * A user account is required because Telegram bots cannot receive messages
+ * from other bots (or themselves) via getUpdates — only real user messages
+ * are delivered.
  *
  * Required env vars:
- *   TELEGRAM_BOT_TOKEN        — bot under test (receiver / pipeline bot)
- *   TELEGRAM_SENDER_BOT_TOKEN — helper bot that sends the test message
- *   TELEGRAM_TEST_CHAT_ID     — group chat where both bots are members
+ *   TELEGRAM_BOT_TOKEN      — bot under test (receiver / pipeline bot)
+ *   TELEGRAM_TEST_CHAT_ID   — chat where the bot can receive messages
+ *   TELEGRAM_API_ID         — from https://my.telegram.org
+ *   TELEGRAM_API_HASH       — from https://my.telegram.org
+ *   TELEGRAM_SESSION_STRING — MTProto session (see scripts/telegram-session.ts)
  *
  * Optional:
- *   E2E_RUNTIME_COMMAND       — runtime command (default: "echo")
- *   E2E_TIMEOUT_MS            — max wait for completion (default: 60000)
+ *   E2E_RUNTIME_COMMAND     — runtime command (default: "echo")
+ *   E2E_TIMEOUT_MS          — max wait for completion (default: 60000)
  *
  * Run:
- *   TELEGRAM_BOT_TOKEN=xxx TELEGRAM_SENDER_BOT_TOKEN=yyy TELEGRAM_TEST_CHAT_ID=123 \
+ *   TELEGRAM_BOT_TOKEN=xxx TELEGRAM_API_ID=123 TELEGRAM_API_HASH=abc \
+ *     TELEGRAM_SESSION_STRING=... TELEGRAM_TEST_CHAT_ID=456 \
  *     pnpm --filter @telegramable/core test:e2e
  */
 import assert from "assert";
@@ -34,25 +37,33 @@ import { createAgentRegistry } from "../src/runtime";
 import { Config } from "../src/config";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
-const SENDER_BOT_TOKEN = process.env.TELEGRAM_SENDER_BOT_TOKEN ?? "";
 const CHAT_ID = process.env.TELEGRAM_TEST_CHAT_ID ?? "";
+const API_ID = process.env.TELEGRAM_API_ID ?? "";
+const API_HASH = process.env.TELEGRAM_API_HASH ?? "";
+const SESSION_STRING = process.env.TELEGRAM_SESSION_STRING ?? "";
 const RUNTIME_COMMAND = process.env.E2E_RUNTIME_COMMAND ?? "echo";
 const TIMEOUT_MS = Number(process.env.E2E_TIMEOUT_MS) || 60_000;
-const shouldSkip = !BOT_TOKEN || !SENDER_BOT_TOKEN || !CHAT_ID;
+const shouldSkip = !BOT_TOKEN || !CHAT_ID || !API_ID || !API_HASH || !SESSION_STRING;
 
-async function sendTelegramMessage(token: string, chatId: string, text: string): Promise<number> {
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text })
+/** Send a message as a real Telegram user via MTProto. */
+async function sendAsUser(apiId: number, apiHash: string, session: string, chatId: string, text: string): Promise<void> {
+  const { TelegramClient } = await import("telegram");
+  const { StringSession } = await import("telegram/sessions");
+
+  const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
+    connectionRetries: 3
   });
-  const json = (await res.json()) as { ok: boolean; result: { message_id: number }; description?: string };
-  if (!json.ok) throw new Error(`sendMessage failed: ${json.description}`);
-  return json.result.message_id;
+
+  await client.connect();
+  try {
+    await client.sendMessage(chatId, { message: text });
+  } finally {
+    await client.disconnect();
+  }
 }
 
 test("E2E: Telegram message flows through the full pipeline", {
-  skip: shouldSkip && "TELEGRAM_BOT_TOKEN, TELEGRAM_SENDER_BOT_TOKEN, or TELEGRAM_TEST_CHAT_ID not set",
+  skip: shouldSkip && "Missing env vars: TELEGRAM_BOT_TOKEN, TELEGRAM_TEST_CHAT_ID, TELEGRAM_API_ID, TELEGRAM_API_HASH, or TELEGRAM_SESSION_STRING",
   timeout: TIMEOUT_MS + 5_000
 }, async () => {
   const logger = createLogger("info");
@@ -95,9 +106,8 @@ test("E2E: Telegram message flows through the full pipeline", {
     // Wait briefly for polling to initialize
     await new Promise((r) => setTimeout(r, 2_000));
 
-    // Send a real message via a *different* bot so the main bot can receive it
-    const messageId = await sendTelegramMessage(SENDER_BOT_TOKEN, CHAT_ID, marker);
-    assert.ok(messageId, "Test message should be sent");
+    // Send a real message as a user via MTProto
+    await sendAsUser(Number(API_ID), API_HASH, SESSION_STRING, CHAT_ID, marker);
 
     // Wait for the pipeline to complete
     const complete = await new Promise<ExecutionEvent>((resolve, reject) => {
