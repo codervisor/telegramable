@@ -97,18 +97,39 @@ const parseChannels = (): ChannelConfig[] => {
   return [{ type: "telegram", id, token, allowedUserIds }];
 };
 
+const parseRuntime = (value?: string): AgentConfig["runtime"] => {
+  switch (value) {
+    case "cli":
+    case "session-claude":
+    case "session-claude-sdk":
+    case "session-gemini":
+    case "session-copilot":
+      return value;
+    default:
+      return undefined; // defaults to "cli" in createRuntime
+  }
+};
+
 const parseAgents = (): AgentConfig[] => {
-  const command = process.env.RUNTIME_COMMAND;
-  if (!command) {
+  const runtime = parseRuntime(process.env.RUNTIME_TYPE);
+
+  // For SDK-based runtimes, command is not required
+  const command = process.env.RUNTIME_COMMAND || "";
+  if (!command && !runtime) {
     return [];
   }
 
   const timeoutMs = Number(process.env.RUNTIME_TIMEOUT_MS || 10 * 60 * 1000);
   return [{
     name: process.env.DEFAULT_AGENT || "default",
+    runtime,
     command,
     workingDir: process.env.RUNTIME_WORKING_DIR,
-    timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 10 * 60 * 1000
+    timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 10 * 60 * 1000,
+    model: process.env.CLAUDE_MODEL,
+    systemPrompt: process.env.SYSTEM_PROMPT,
+    allowedTools: process.env.ALLOWED_TOOLS?.split(",").map(s => s.trim()).filter(Boolean),
+    maxBudgetUsd: process.env.MAX_BUDGET_USD ? Number(process.env.MAX_BUDGET_USD) : undefined
   }];
 };
 

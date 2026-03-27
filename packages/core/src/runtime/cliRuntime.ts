@@ -32,6 +32,8 @@ export class CliRuntime implements Runtime {
         }
       });
 
+      const stdoutChunks: string[] = [];
+
       const timeout: NodeJS.Timeout = setTimeout(() => {
         child.kill("SIGKILL");
         eventBus.emit({
@@ -46,13 +48,15 @@ export class CliRuntime implements Runtime {
       }, this.config.timeoutMs ?? 10 * 60 * 1000);
 
       child.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutChunks.push(text);
         eventBus.emit({
           executionId,
           channelId: message.channelId,
           chatId: message.chatId,
           type: "stdout",
           timestamp: Date.now(),
-          payload: { text: chunk.toString() }
+          payload: { text }
         });
       });
 
@@ -82,13 +86,14 @@ export class CliRuntime implements Runtime {
 
       child.on("close", (code: number | null) => {
         clearTimeout(timeout);
+        const response = stdoutChunks.join("").trim();
         eventBus.emit({
           executionId,
           channelId: message.channelId,
           chatId: message.chatId,
           type: "complete",
           timestamp: Date.now(),
-          payload: { code: code ?? null }
+          payload: { code: code ?? null, response: response || undefined }
         });
         resolve();
       });
