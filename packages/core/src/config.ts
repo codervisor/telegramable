@@ -43,6 +43,8 @@ export interface ChannelConfig {
   [key: string]: unknown;
 }
 
+export type PermissionMode = "plan" | "auto" | "bypassPermissions";
+
 export interface AgentConfig {
   name: string;
   runtime?: "cli" | "session-claude" | "session-claude-sdk" | "session-gemini" | "session-copilot";
@@ -54,11 +56,15 @@ export interface AgentConfig {
   sessionTimeoutMs?: number;
   maxTurns?: number;
 
-  // Claude SDK-specific options
+  // Claude options (shared by CLI and SDK runtimes)
   model?: string;
   systemPrompt?: string;
   allowedTools?: string[];
+  disallowedTools?: string[];
   maxBudgetUsd?: number;
+  permissionMode?: PermissionMode;
+  outputFormat?: "text" | "json" | "stream-json";
+  bare?: boolean;
 }
 
 export interface Config {
@@ -110,6 +116,34 @@ const parseRuntime = (value?: string): AgentConfig["runtime"] => {
   }
 };
 
+const parsePermissionMode = (value?: string): PermissionMode | undefined => {
+  switch (value) {
+    case "plan":
+    case "auto":
+    case "bypassPermissions":
+      return value;
+    default:
+      return undefined;
+  }
+};
+
+const parseOutputFormat = (value?: string): AgentConfig["outputFormat"] => {
+  switch (value) {
+    case "text":
+    case "json":
+    case "stream-json":
+      return value;
+    default:
+      return undefined;
+  }
+};
+
+const splitCsv = (value?: string): string[] | undefined => {
+  if (!value) return undefined;
+  const items = value.split(",").map(s => s.trim()).filter(Boolean);
+  return items.length > 0 ? items : undefined;
+};
+
 const parseAgents = (): AgentConfig[] => {
   const runtime = parseRuntime(process.env.RUNTIME_TYPE);
 
@@ -120,16 +154,24 @@ const parseAgents = (): AgentConfig[] => {
   }
 
   const timeoutMs = Number(process.env.RUNTIME_TIMEOUT_MS || 10 * 60 * 1000);
+  const maxTurns = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
+  const maxBudgetUsd = process.env.MAX_BUDGET_USD ? Number(process.env.MAX_BUDGET_USD) : undefined;
+
   return [{
     name: process.env.DEFAULT_AGENT || "default",
     runtime,
     command,
     workingDir: process.env.RUNTIME_WORKING_DIR,
     timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 10 * 60 * 1000,
+    maxTurns: maxTurns && Number.isFinite(maxTurns) ? maxTurns : undefined,
     model: process.env.CLAUDE_MODEL,
     systemPrompt: process.env.SYSTEM_PROMPT,
-    allowedTools: process.env.ALLOWED_TOOLS?.split(",").map(s => s.trim()).filter(Boolean),
-    maxBudgetUsd: process.env.MAX_BUDGET_USD ? Number(process.env.MAX_BUDGET_USD) : undefined
+    allowedTools: splitCsv(process.env.ALLOWED_TOOLS),
+    disallowedTools: splitCsv(process.env.DISALLOWED_TOOLS),
+    maxBudgetUsd: maxBudgetUsd && Number.isFinite(maxBudgetUsd) ? maxBudgetUsd : undefined,
+    permissionMode: parsePermissionMode(process.env.PERMISSION_MODE),
+    outputFormat: parseOutputFormat(process.env.OUTPUT_FORMAT),
+    bare: process.env.BARE === "true"
   }];
 };
 
