@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { spawn } from "child_process";
 import { AgentConfig } from "../config";
 import { EventBus } from "../events/eventBus";
@@ -6,6 +7,9 @@ import { Logger } from "../logging";
 import { Runtime } from "./types";
 
 export class CliRuntime implements Runtime {
+  /** Map of "channelId::chatId" → Claude CLI session ID for conversation continuity. */
+  private readonly sessions = new Map<string, string>();
+
   constructor(private readonly config: AgentConfig, private readonly logger: Logger) { }
 
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
@@ -23,7 +27,23 @@ export class CliRuntime implements Runtime {
     });
 
     return new Promise((resolve, reject) => {
-      const child = spawn(this.config.command, this.config.args || [], {
+      const sessionKey = `${message.channelId}::${message.chatId}`;
+      const existingSessionId = this.sessions.get(sessionKey);
+
+      // Build args: start with configured args, then add session flags
+      const args = [...(this.config.args || [])];
+
+      if (existingSessionId) {
+        // Resume the existing session
+        args.push("--resume", existingSessionId);
+      } else {
+        // Create a new session with a deterministic ID so we can resume later
+        const newSessionId = randomUUID();
+        this.sessions.set(sessionKey, newSessionId);
+        args.push("--session-id", newSessionId);
+      }
+
+      const child = spawn(this.config.command, args, {
         cwd: this.config.workingDir,
         shell: true,
         env: {
@@ -86,6 +106,12 @@ export class CliRuntime implements Runtime {
 
       child.on("close", (code: number | null) => {
         clearTimeout(timeout);
+
+        // If the CLI failed, clear the session so the next attempt starts fresh
+        if (code !== 0) {
+          this.sessions.delete(sessionKey);
+        }
+
         const response = stdoutChunks.join("").trim();
         eventBus.emit({
           executionId,
@@ -104,7 +130,12 @@ export class CliRuntime implements Runtime {
         child.stdin.end();
       }
 
-      this.logger.info("Spawned CLI runtime.", { executionId, command: this.config.command });
+      this.logger.info("Spawned CLI runtime.", {
+        executionId,
+        command: this.config.command,
+        sessionId: this.sessions.get(sessionKey),
+        resumed: !!existingSessionId
+      });
     });
   }
 }
