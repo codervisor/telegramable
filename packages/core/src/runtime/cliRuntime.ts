@@ -12,6 +12,53 @@ export class CliRuntime implements Runtime {
 
   constructor(private readonly config: AgentConfig, private readonly logger: Logger) { }
 
+  /** Build CLI args from AgentConfig (model, tools, permissions, etc.). */
+  private buildConfigArgs(): string[] {
+    const args: string[] = [];
+
+    if (this.config.model) {
+      args.push("--model", this.config.model);
+    }
+
+    if (this.config.systemPrompt) {
+      args.push("--append-system-prompt", this.config.systemPrompt);
+    }
+
+    if (this.config.permissionMode) {
+      args.push("--permission-mode", this.config.permissionMode);
+    }
+
+    if (this.config.allowedTools?.length) {
+      for (const tool of this.config.allowedTools) {
+        args.push("--allowedTools", tool);
+      }
+    }
+
+    if (this.config.disallowedTools?.length) {
+      for (const tool of this.config.disallowedTools) {
+        args.push("--disallowedTools", tool);
+      }
+    }
+
+    if (this.config.maxTurns != null) {
+      args.push("--max-turns", String(this.config.maxTurns));
+    }
+
+    if (this.config.maxBudgetUsd != null) {
+      args.push("--max-budget-usd", String(this.config.maxBudgetUsd));
+    }
+
+    if (this.config.outputFormat) {
+      args.push("--output-format", this.config.outputFormat);
+    }
+
+    if (this.config.bare) {
+      args.push("--bare");
+    }
+
+    return args;
+  }
+
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
     if (!this.config.command) {
       throw new Error("Agent command is required for cli runtime.");
@@ -30,14 +77,15 @@ export class CliRuntime implements Runtime {
       const sessionKey = `${message.channelId}::${message.chatId}`;
       const existingSessionId = this.sessions.get(sessionKey);
 
-      // Build args: start with configured args, then add session flags
-      const args = [...(this.config.args || [])];
+      // Build args: configured args → config-derived flags → session flags
+      const args = [
+        ...(this.config.args || []),
+        ...this.buildConfigArgs()
+      ];
 
       if (existingSessionId) {
-        // Resume the existing session
         args.push("--resume", existingSessionId);
       } else {
-        // Create a new session with a deterministic ID so we can resume later
         const newSessionId = randomUUID();
         this.sessions.set(sessionKey, newSessionId);
         args.push("--session-id", newSessionId);
