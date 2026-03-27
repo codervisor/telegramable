@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { EventBus } from "../events/eventBus";
 import { ExecutionEvent } from "../events/types";
-import { IMAdapter, IMMessage } from "../gateway/types";
+import { IMAdapter, IMAdapterStartOptions, IMMessage } from "../gateway/types";
 import { Logger } from "../logging";
 import { ChunkThrottler } from "./chunkThrottler";
 import { ExecutionRegistry, InMemoryExecutionRegistry } from "./executionRegistry";
@@ -95,13 +95,13 @@ export class ChannelHub {
     }
   }
 
-  async start(): Promise<void> {
+  async start(options?: IMAdapterStartOptions): Promise<void> {
     this.subscribeEvents();
     await Promise.all(Array.from(this.adapters.values()).map((adapter) => {
       return adapter.start((message) => void this.handleMessage({
         ...message,
         channelId: adapter.id
-      }));
+      }), options);
     }));
 
     this.logger.info("ChannelHub started.", { channels: Array.from(this.adapters.keys()) });

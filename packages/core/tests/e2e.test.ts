@@ -1,29 +1,22 @@
 /**
- * Real end-to-end test against the Telegram Bot API.
+ * End-to-end test for the message pipeline.
  *
- * Boots the full stack in-process (TelegramAdapter → ChannelHub → Runtime),
- * sends a message via a Telegram **user account** (MTProto), and verifies the
- * pipeline completes by observing EventBus events.
+ * Boots the full stack in-process (TelegramAdapter → ChannelHub → CliRuntime)
+ * and injects a raw Telegram Update via grammy's handleUpdate(), exercising
+ * the real adapter handlers, hub routing, and runtime execution.
  *
- * A user account is required because Telegram bots cannot receive messages
- * from other bots (or themselves) via getUpdates — only real user messages
- * are delivered.
+ * A mock fetch is used so no real Telegram API calls are made — but the full
+ * grammy handler chain, adapter logic, hub routing, and CliRuntime all run
+ * with real code.
  *
- * Required env vars:
- *   TELEGRAM_BOT_TOKEN      — bot under test (receiver / pipeline bot)
- *   TELEGRAM_TEST_CHAT_ID   — chat where the bot can receive messages
- *   TELEGRAM_API_ID         — from https://my.telegram.org
- *   TELEGRAM_API_HASH       — from https://my.telegram.org
- *   TELEGRAM_SESSION_STRING — MTProto session (see scripts/telegram-session.ts)
+ * No external secrets or Telegram accounts are required.
  *
- * Optional:
- *   E2E_RUNTIME_COMMAND     — runtime command (default: "echo")
- *   E2E_TIMEOUT_MS          — max wait for completion (default: 60000)
+ * Optional env vars:
+ *   E2E_RUNTIME_COMMAND — runtime command (default: "echo")
+ *   E2E_TIMEOUT_MS      — max wait for completion (default: 10000)
  *
  * Run:
- *   TELEGRAM_BOT_TOKEN=xxx TELEGRAM_API_ID=123 TELEGRAM_API_HASH=abc \
- *     TELEGRAM_SESSION_STRING=... TELEGRAM_TEST_CHAT_ID=456 \
- *     pnpm --filter @telegramable/core test:e2e
+ *   pnpm --filter @telegramable/core test:e2e
  */
 import assert from "assert";
 import test from "node:test";
@@ -36,47 +29,47 @@ import { createLogger } from "../src/logging";
 import { createAgentRegistry } from "../src/runtime";
 import { Config } from "../src/config";
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
-const CHAT_ID = process.env.TELEGRAM_TEST_CHAT_ID ?? "";
-const API_ID = process.env.TELEGRAM_API_ID ?? "";
-const API_HASH = process.env.TELEGRAM_API_HASH ?? "";
-const SESSION_STRING = process.env.TELEGRAM_SESSION_STRING ?? "";
 const RUNTIME_COMMAND = process.env.E2E_RUNTIME_COMMAND ?? "echo";
-const TIMEOUT_MS = Number(process.env.E2E_TIMEOUT_MS) || 60_000;
-const shouldSkip = !BOT_TOKEN || !CHAT_ID || !API_ID || !API_HASH || !SESSION_STRING;
+const TIMEOUT_MS = Number(process.env.E2E_TIMEOUT_MS) || 10_000;
 
-/** Send a message as a real Telegram user via MTProto. */
-async function sendAsUser(apiId: number, apiHash: string, session: string, chatId: string, text: string): Promise<void> {
-  const { TelegramClient } = await import("telegram");
-  const { StringSession } = await import("telegram/sessions");
+/** Mock fetch that returns canned Telegram API responses. */
+const mockFetch: typeof fetch = async (input) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
 
-  const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
-    connectionRetries: 3
-  });
-
-  await client.connect();
-  try {
-    await client.sendMessage(chatId, { message: text });
-  } finally {
-    await client.disconnect();
+  // getMe — required by bot.init()
+  if (url.includes("/getMe")) {
+    return Response.json({
+      ok: true,
+      result: { id: 1, is_bot: true, first_name: "TestBot", username: "test_bot" }
+    });
   }
-}
+
+  // sendMessage — called when hub forwards events back
+  if (url.includes("/sendMessage")) {
+    return Response.json({
+      ok: true,
+      result: { message_id: 200, chat: { id: 12345, type: "private" }, date: Math.floor(Date.now() / 1000), text: "" }
+    });
+  }
+
+  // Default: return ok for any other API call
+  return Response.json({ ok: true, result: true });
+};
 
 test("E2E: Telegram message flows through the full pipeline", {
-  skip: shouldSkip && "Missing env vars: TELEGRAM_BOT_TOKEN, TELEGRAM_TEST_CHAT_ID, TELEGRAM_API_ID, TELEGRAM_API_HASH, or TELEGRAM_SESSION_STRING",
   timeout: TIMEOUT_MS + 5_000
 }, async () => {
   const logger = createLogger("info");
   const eventBus = new EventBus();
   const marker = `e2e-${Date.now()}`;
+  const chatId = "12345";
 
-  // Build a minimal config that uses a simple echo runtime
   const config: Config = {
     logLevel: "info",
     channels: [{
       id: "telegram",
       type: "telegram" as const,
-      token: BOT_TOKEN,
+      token: "fake:token",
       defaultAgent: "test-agent"
     }],
     agents: [{
@@ -87,27 +80,36 @@ test("E2E: Telegram message flows through the full pipeline", {
   };
 
   const registry = createAgentRegistry(config, logger);
-  const adapter = new TelegramAdapter("telegram", BOT_TOKEN, logger);
+  const adapter = new TelegramAdapter("telegram", "fake:token", logger, undefined, {
+    client: { fetch: mockFetch }
+  });
   const router = new DefaultRouter(config.channels, registry);
   const hub = new ChannelHub([adapter], router, eventBus, logger);
 
   // Collect events for our test chat
   const events: ExecutionEvent[] = [];
   eventBus.on((event) => {
-    if (event.chatId === CHAT_ID) {
+    if (event.chatId === chatId) {
       events.push(event);
     }
   });
 
-  // Start the hub (begins Telegram long-polling)
-  await hub.start();
+  // Start with polling disabled — handlers are registered, no HTTP calls to Telegram
+  await hub.start({ polling: false });
 
   try {
-    // Wait briefly for polling to initialize
-    await new Promise((r) => setTimeout(r, 2_000));
-
-    // Send a real message as a user via MTProto
-    await sendAsUser(Number(API_ID), API_HASH, SESSION_STRING, CHAT_ID, marker);
+    // Inject a raw Telegram Update into grammy's handler chain, just like
+    // a real update from getUpdates would be processed
+    await adapter.handleUpdate({
+      update_id: 1,
+      message: {
+        message_id: 100,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: Number(chatId), type: "private" },
+        from: { id: 999, is_bot: false, first_name: "Test" },
+        text: marker
+      }
+    });
 
     // Wait for the pipeline to complete
     const complete = await new Promise<ExecutionEvent>((resolve, reject) => {
@@ -117,7 +119,7 @@ test("E2E: Telegram message flows through the full pipeline", {
       );
 
       eventBus.on((event) => {
-        if (event.chatId === CHAT_ID && (event.type === "complete" || event.type === "error")) {
+        if (event.chatId === chatId && (event.type === "complete" || event.type === "error")) {
           clearTimeout(timeout);
           resolve(event);
         }

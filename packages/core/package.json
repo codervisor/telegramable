@@ -22,7 +22,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
-    "telegram": "^2.26.22",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

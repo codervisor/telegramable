@@ -1,5 +1,6 @@
-import { Bot, Context } from "grammy";
-import { IMAdapter, IMMessage } from "./types";
+import { Bot, type BotConfig, Context } from "grammy";
+import type { Update } from "grammy/types";
+import { IMAdapter, IMAdapterStartOptions, IMMessage } from "./types";
 import { Logger } from "../logging";
 
 export class TelegramAdapter implements IMAdapter {
@@ -9,7 +10,8 @@ export class TelegramAdapter implements IMAdapter {
     public readonly id: string,
     private readonly token: string,
     private readonly logger: Logger,
-    private readonly allowedUserIds?: string[]
+    private readonly allowedUserIds?: string[],
+    private readonly botConfig?: BotConfig<Context>
   ) { }
 
   private isUserAllowed(userId: string | undefined): boolean {
@@ -17,8 +19,9 @@ export class TelegramAdapter implements IMAdapter {
     return userId !== undefined && this.allowedUserIds.includes(userId);
   }
 
-  async start(onMessage: (message: IMMessage) => void): Promise<void> {
-    this.bot = new Bot(this.token);
+  async start(onMessage: (message: IMMessage) => void, options?: IMAdapterStartOptions): Promise<void> {
+    const polling = options?.polling ?? true;
+    this.bot = new Bot(this.token, this.botConfig);
 
     this.bot.on("message:text", (ctx: Context) => {
       const message = ctx.message;
@@ -103,13 +106,24 @@ export class TelegramAdapter implements IMAdapter {
       this.logger.warn("Telegram bot error.", { channelId: this.id, message: err.message });
     });
 
-    // Start long-polling (non-blocking)
-    this.bot.start({
-      drop_pending_updates: true,
-      onStart: () => {
-        this.logger.info("Telegram adapter started.", { channelId: this.id });
-      }
-    });
+    if (polling) {
+      // Start long-polling (non-blocking)
+      this.bot.start({
+        drop_pending_updates: true,
+        onStart: () => {
+          this.logger.info("Telegram adapter started.", { channelId: this.id });
+        }
+      });
+    } else {
+      await this.bot.init();
+      this.logger.info("Telegram adapter started (no polling).", { channelId: this.id });
+    }
+  }
+
+  /** Inject a raw Telegram Update into the bot's handler chain. For testing. */
+  async handleUpdate(update: Update): Promise<void> {
+    if (!this.bot) throw new Error("Telegram bot not started.");
+    await this.bot.handleUpdate(update);
   }
 
   async sendMessage(chatId: string, text: string): Promise<void> {
@@ -197,7 +211,11 @@ export class TelegramAdapter implements IMAdapter {
     if (!this.bot) {
       return;
     }
-    await this.bot.stop();
+    try {
+      await this.bot.stop();
+    } catch {
+      // bot.stop() throws if polling was never started — safe to ignore
+    }
     this.logger.info("Telegram adapter stopped.", { channelId: this.id });
   }
 }

@@ -21,9 +21,14 @@ export interface CallbackQuery {
   callbackQueryId: string;
 }
 
+export interface IMAdapterStartOptions {
+  /** When true, registers handlers but skips transport-level polling. */
+  polling?: boolean;
+}
+
 export interface IMAdapter {
   id: string;
-  start: (onMessage: (message: IMMessage) => void) => Promise<void>;
+  start: (onMessage: (message: IMMessage) => void, options?: IMAdapterStartOptions) => Promise<void>;
   sendMessage: (chatId: string, text: string) => Promise<void>;
   stop: () => Promise<void>;
 
