@@ -40,5 +40,8 @@ jobs:
       - name: Run E2E tests
         run: pnpm test:e2e
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_SENDER_BOT_TOKEN: ${{ secrets.TELEGRAM_SENDER_BOT_TOKEN }}
+          TELEGRAM_TEST_CHAT_ID: ${{ secrets.TELEGRAM_TEST_CHAT_ID }}
           E2E_RUNTIME_COMMAND: "echo"
-          E2E_TIMEOUT_MS: "10000"
+          E2E_TIMEOUT_MS: "60000"
