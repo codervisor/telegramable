@@ -172,20 +172,22 @@ export class CliRuntime implements Runtime {
         resolve();
       });
 
-      if (child.stdin) {
-        child.stdin.on("error", (error: Error) => {
-          this.logger.warn("stdin write failed.", { executionId, error: error.message });
+      child.on("spawn", () => {
+        this.logger.info("Spawned CLI runtime.", {
+          executionId,
+          command: this.config.command,
+          sessionId: this.sessions.get(sessionKey),
+          resumed: !!existingSessionId
         });
-        child.stdin.write(message.text);
-        child.stdin.write("\n");
-        child.stdin.end();
-      }
 
-      this.logger.info("Spawned CLI runtime.", {
-        executionId,
-        command: this.config.command,
-        sessionId: this.sessions.get(sessionKey),
-        resumed: !!existingSessionId
+        if (child.stdin) {
+          child.stdin.on("error", (error: Error) => {
+            this.logger.warn("stdin write failed.", { executionId, error: error.message });
+          });
+          child.stdin.write(message.text);
+          child.stdin.write("\n");
+          child.stdin.end();
+        }
       });
     });
   }
