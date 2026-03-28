@@ -33,6 +33,7 @@ ENV NODE_ENV=production
 # Install Claude Code CLI
 RUN apk add --no-cache curl bash && \
     curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:/root/.claude/local/bin:${PATH}"
 
 # Web — Next.js standalone output
 COPY --from=builder /app/apps/web/.next/standalone ./web/
