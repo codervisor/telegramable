@@ -219,6 +219,24 @@ test("CliRuntime emits descriptive error when command is not found", async () =>
   assert.match(errorEvent!.payload!.reason as string, /Command not found/);
 });
 
+test("CliRuntime emits descriptive error when working directory does not exist", async () => {
+  const config: AgentConfig = { name: "bad-cwd-agent", command: "echo", workingDir: "/nonexistent_dir_xyz" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await assert.rejects(
+    () => runtime.execute(msg(), "exec-cwd", eventBus),
+    (error: Error) => {
+      assert.match(error.message, /Working directory not found/);
+      return true;
+    }
+  );
+
+  const errorEvent = events.find((e) => e.type === "error");
+  assert.ok(errorEvent, "should emit error event");
+});
+
 // ---------- missing command ----------
 
 test("CliRuntime throws when command is not configured", async () => {

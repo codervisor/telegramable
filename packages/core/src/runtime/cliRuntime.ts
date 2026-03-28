@@ -114,6 +114,7 @@ export class CliRuntime implements Runtime {
 
       const child = spawn(executable, args, {
         cwd: this.config.workingDir,
+        shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
@@ -181,6 +182,21 @@ export class CliRuntime implements Runtime {
 
       child.on("close", (code: number | null) => {
         clearTimeout(timeout);
+
+        // Exit code 127 means the shell could not find the command
+        if (code === 127) {
+          const reason = `Command not found: "${executable}". Ensure it is installed and available in PATH.`;
+          eventBus.emit({
+            executionId,
+            channelId: message.channelId,
+            chatId: message.chatId,
+            type: "error",
+            timestamp: Date.now(),
+            payload: { reason }
+          });
+          reject(new Error(reason));
+          return;
+        }
 
         // If the CLI failed, clear the session so the next attempt starts fresh
         if (code !== 0) {
