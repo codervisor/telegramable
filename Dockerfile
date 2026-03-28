@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 
 # ---- Build ----
@@ -26,13 +26,15 @@ RUN pnpm --filter @telegramable/core build && \
 RUN pnpm deploy --filter @telegramable/cli --prod /deploy/cli
 
 # ---- Run ----
-FROM node:22-alpine AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
 # Install Claude Code CLI
-RUN apk add --no-cache curl bash && \
-    curl -fsSL https://claude.ai/install.sh | bash
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -fsSL https://claude.ai/install.sh | bash && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 ENV PATH="/root/.local/bin:/root/.claude/local/bin:${PATH}"
 
 # Web — Next.js standalone output
