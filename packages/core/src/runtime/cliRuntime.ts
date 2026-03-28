@@ -12,6 +12,15 @@ export class CliRuntime implements Runtime {
 
   constructor(private readonly config: AgentConfig, private readonly logger: Logger) { }
 
+  /**
+   * Parse the command string into an executable and its initial arguments.
+   * e.g. "claude --print" → { executable: "claude", initialArgs: ["--print"] }
+   */
+  private parseCommand(): { executable: string; initialArgs: string[] } {
+    const parts = this.config.command!.trim().split(/\s+/);
+    return { executable: parts[0], initialArgs: parts.slice(1) };
+  }
+
   /** Build CLI args from AgentConfig (model, tools, permissions, etc.). */
   private buildConfigArgs(): string[] {
     const args: string[] = [];
@@ -77,8 +86,11 @@ export class CliRuntime implements Runtime {
       const sessionKey = `${message.channelId}::${message.chatId}`;
       const existingSessionId = this.sessions.get(sessionKey);
 
-      // Build args: configured args → config-derived flags → session flags
+      const { executable, initialArgs } = this.parseCommand();
+
+      // Build args: command initial args → configured args → config-derived flags → session flags → prompt
       const args = [
+        ...initialArgs,
         ...(this.config.args || []),
         ...this.buildConfigArgs()
       ];
@@ -91,9 +103,14 @@ export class CliRuntime implements Runtime {
         args.push("--session-id", newSessionId);
       }
 
-      const child = spawn(this.config.command, args, {
+      // Pass prompt as a positional argument (after "--" to prevent flag interpretation).
+      // This avoids stdin pipe race conditions where the child process may not be ready
+      // to read stdin, causing EPIPE errors.
+      args.push("--", message.text);
+
+      const child = spawn(executable, args, {
         cwd: this.config.workingDir,
-        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
           ...(this.config.env || {})
@@ -172,22 +189,11 @@ export class CliRuntime implements Runtime {
         resolve();
       });
 
-      child.on("spawn", () => {
-        this.logger.info("Spawned CLI runtime.", {
-          executionId,
-          command: this.config.command,
-          sessionId: this.sessions.get(sessionKey),
-          resumed: !!existingSessionId
-        });
-
-        if (child.stdin) {
-          child.stdin.on("error", (error: Error) => {
-            this.logger.warn("stdin write failed.", { executionId, error: error.message });
-          });
-          child.stdin.write(message.text);
-          child.stdin.write("\n");
-          child.stdin.end();
-        }
+      this.logger.info("Spawned CLI runtime.", {
+        executionId,
+        command: this.config.command,
+        sessionId: this.sessions.get(sessionKey),
+        resumed: !!existingSessionId
       });
     });
   }

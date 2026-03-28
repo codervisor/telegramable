@@ -28,8 +28,8 @@ const collect = (eventBus: EventBus): ExecutionEvent[] => {
 
 // ---------- happy path ----------
 
-test("CliRuntime echoes stdin through a simple command", async () => {
-  const config: AgentConfig = { name: "echo-agent", command: TEST_CMD, args: ["echo-stdin"] };
+test("CliRuntime passes prompt as positional argument", async () => {
+  const config: AgentConfig = { name: "echo-agent", command: TEST_CMD, args: ["echo-last-arg"] };
   const runtime = new CliRuntime(config, logger);
   const eventBus = new EventBus();
   const events = collect(eventBus);
@@ -148,17 +148,17 @@ test("CliRuntime uses separate sessions for different chats", async () => {
 
 // ---------- EPIPE: child exits before stdin write completes ----------
 
-test("CliRuntime survives EPIPE when child exits before stdin is consumed", async () => {
-  // `true` exits immediately with code 0 without reading stdin
-  const config: AgentConfig = { name: "epipe-agent", command: "true" };
+test("CliRuntime handles child that ignores prompt argument", async () => {
+  // `true` exits immediately with code 0, ignoring all arguments
+  const config: AgentConfig = { name: "ignore-agent", command: "true" };
   const runtime = new CliRuntime(config, logger);
   const eventBus = new EventBus();
   const events = collect(eventBus);
 
-  await runtime.execute(msg({ text: "this will EPIPE" }), "exec-7", eventBus);
+  await runtime.execute(msg({ text: "ignored prompt" }), "exec-7", eventBus);
 
   const complete = events.find((e) => e.type === "complete");
-  assert.ok(complete, "should still emit complete event after EPIPE");
+  assert.ok(complete, "should still emit complete event");
 });
 
 // ---------- timeout ----------
