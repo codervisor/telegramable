@@ -125,6 +125,8 @@ export class CliRuntime implements Runtime {
       const stdoutChunks: string[] = [];
       const stderrChunks: string[] = [];
       let receivedAnyOutput = false;
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
       const timeoutMs = this.config.timeoutMs ?? 10 * 60 * 1000;
 
       // Periodic "still alive" logging to diagnose hangs
@@ -133,12 +135,13 @@ export class CliRuntime implements Runtime {
           executionId,
           pid: child.pid,
           receivedAnyOutput,
-          stdoutBytes: stdoutChunks.join("").length,
-          stderrBytes: stderrChunks.join("").length
+          stdoutBytes,
+          stderrBytes
         });
       }, 30_000);
 
       const timeout: NodeJS.Timeout = setTimeout(() => {
+        clearInterval(heartbeat);
         child.kill("SIGKILL");
         this.logger.error("CLI runtime timeout — killing process.", {
           executionId,
@@ -161,6 +164,7 @@ export class CliRuntime implements Runtime {
       child.stdout?.on("data", (chunk: Buffer) => {
         receivedAnyOutput = true;
         const text = chunk.toString();
+        stdoutBytes += chunk.length;
         stdoutChunks.push(text);
         eventBus.emit({
           executionId,
@@ -175,6 +179,7 @@ export class CliRuntime implements Runtime {
       child.stderr?.on("data", (chunk: Buffer) => {
         receivedAnyOutput = true;
         const text = chunk.toString();
+        stderrBytes += chunk.length;
         stderrChunks.push(text);
         this.logger.warn("CLI stderr output.", { executionId, text: text.slice(0, 500) });
         eventBus.emit({
@@ -218,8 +223,8 @@ export class CliRuntime implements Runtime {
           executionId,
           pid: child.pid,
           exitCode: code,
-          stdoutBytes: stdoutChunks.join("").length,
-          stderrBytes: stderr.length,
+          stdoutBytes,
+          stderrBytes,
           stderr: stderr.slice(0, 500) || undefined
         });
 
@@ -264,10 +269,15 @@ export class CliRuntime implements Runtime {
         resolve();
       });
 
+      // Log safe subset of args (redact system prompt and user prompt)
+      const safeArgs = args.slice(0, -2);  // omit trailing "--" and user prompt
+      const redacted = safeArgs.map((arg, i) =>
+        safeArgs[i - 1] === "--append-system-prompt" ? "[REDACTED]" : arg
+      );
       this.logger.info("Spawned CLI runtime.", {
         executionId,
         command: this.config.command,
-        fullArgs: args.slice(0, -1).join(" "),  // omit user prompt for brevity
+        args: redacted.join(" "),
         sessionId: this.sessions.get(sessionKey),
         resumed: !!existingSessionId,
         pid: child.pid,

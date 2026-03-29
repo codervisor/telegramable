@@ -173,7 +173,14 @@ export class SdkClaudeSession implements AgentSession {
             resultText = message.result;
           } else {
             const errorMsg = "duration_ms" in message ? `SDK error after ${message.duration_ms}ms` : "SDK execution error";
-            this.logger?.error("SDK returned error result.", { executionId, errorMsg, message: JSON.stringify(message) });
+            this.logger?.error("SDK returned error result.", {
+              executionId,
+              errorMsg,
+              type: message.type,
+              subtype: (message as { subtype?: string }).subtype,
+              sessionId: (message as { session_id?: string }).session_id,
+              durationMs: "duration_ms" in message ? (message as { duration_ms?: number }).duration_ms : undefined
+            });
             throw new Error(errorMsg);
           }
         }
