@@ -69,6 +69,14 @@ export class SdkClaudeSession implements AgentSession {
   private sdkQueryFn?: typeof sdkQuery;
   private readonly options: SdkClaudeSessionOptions;
 
+  get resumeId(): string | undefined {
+    return this.sdkSessionId;
+  }
+
+  setResumeId(id: string): void {
+    this.sdkSessionId = id;
+  }
+
   constructor(
     readonly channelId: string,
     readonly chatId: string,

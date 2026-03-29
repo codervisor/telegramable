@@ -1,4 +1,5 @@
 import { Logger } from "../../logging";
+import { FileSessionStore } from "./fileSessionStore";
 import { AgentSession, SessionFactory, SessionManager } from "./types";
 
 interface SessionEntry {
@@ -12,16 +13,19 @@ interface InMemorySessionManagerOptions {
   createSession: SessionFactory;
   logger: Logger;
   now?: () => number;
+  fileStore?: FileSessionStore;
 }
 
 export class InMemorySessionManager implements SessionManager {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly sessionTimeoutMs: number;
   private readonly now: () => number;
+  private readonly fileStore?: FileSessionStore;
 
   constructor(private readonly options: InMemorySessionManagerOptions) {
     this.sessionTimeoutMs = options.sessionTimeoutMs ?? 30 * 60 * 1000;
     this.now = options.now ?? (() => Date.now());
+    this.fileStore = options.fileStore;
   }
 
   getOrCreate(channelId: string, chatId: string, agentName: string): AgentSession {
@@ -35,6 +39,20 @@ export class InMemorySessionManager implements SessionManager {
     }
 
     const session = this.options.createSession(channelId, chatId, agentName);
+
+    // Restore persisted resume ID so the session continues a prior conversation
+    const persistedResumeId = this.fileStore?.get(key);
+    if (persistedResumeId && session.setResumeId) {
+      session.setResumeId(persistedResumeId);
+      this.options.logger.debug("Restored session resume ID from disk.", {
+        sessionId: session.sessionId,
+        resumeId: persistedResumeId,
+        channelId,
+        chatId,
+        agentName
+      });
+    }
+
     this.sessions.set(key, {
       key,
       session,

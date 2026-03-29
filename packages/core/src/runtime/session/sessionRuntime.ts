@@ -3,13 +3,15 @@ import { EventBus } from "../../events/eventBus";
 import { IMMessage } from "../../gateway/types";
 import { Logger } from "../../logging";
 import { Runtime } from "../types";
+import { FileSessionStore } from "./fileSessionStore";
 import { SessionManager } from "./types";
 
 export class SessionRuntime implements Runtime {
   constructor(
     private readonly config: AgentConfig,
     private readonly sessionManager: SessionManager,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly fileStore?: FileSessionStore
   ) { }
 
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
@@ -29,6 +31,12 @@ export class SessionRuntime implements Runtime {
     });
 
     const response = await session.send(message.text, executionId, eventBus);
+
+    // Persist the session resume ID so conversations survive restarts
+    if (session.resumeId && this.fileStore) {
+      const storeKey = `${message.channelId}::${message.chatId}::${this.config.name}`;
+      this.fileStore.set(storeKey, session.resumeId);
+    }
 
     if (!response) {
       this.logger.warn("Session returned empty response — runtime may have failed silently.", {

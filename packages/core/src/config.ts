@@ -72,6 +72,7 @@ export interface Config {
   agents: AgentConfig[];
   defaultAgent?: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  dataDir?: string;
 }
 
 const parseLogLevel = (value?: string): Config["logLevel"] => {
@@ -183,6 +184,7 @@ export const loadConfig = (): Config => {
     channels: parseChannels(),
     agents: parseAgents(),
     defaultAgent: process.env.DEFAULT_AGENT,
-    logLevel: parseLogLevel(process.env.LOG_LEVEL)
+    logLevel: parseLogLevel(process.env.LOG_LEVEL),
+    dataDir: process.env.DATA_DIR || undefined
   };
 };

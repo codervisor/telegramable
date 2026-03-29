@@ -6,12 +6,18 @@ import { EventBus } from "../events/eventBus";
 import { IMMessage } from "../gateway/types";
 import { Logger } from "../logging";
 import { Runtime } from "./types";
+import { FileSessionStore } from "./session/fileSessionStore";
 
 export class CliRuntime implements Runtime {
   /** Map of "channelId::chatId" → Claude CLI session ID for conversation continuity. */
   private readonly sessions = new Map<string, string>();
+  private readonly fileStore?: FileSessionStore;
 
-  constructor(private readonly config: AgentConfig, private readonly logger: Logger) { }
+  constructor(private readonly config: AgentConfig, private readonly logger: Logger, dataDir?: string) {
+    if (dataDir) {
+      this.fileStore = new FileSessionStore(dataDir, "cli-sessions.json", logger);
+    }
+  }
 
   /**
    * Parse the command string into an executable and its initial arguments.
@@ -98,7 +104,7 @@ export class CliRuntime implements Runtime {
 
     return new Promise((resolve, reject) => {
       const sessionKey = `${message.channelId}::${message.chatId}`;
-      const existingSessionId = this.sessions.get(sessionKey);
+      const existingSessionId = this.sessions.get(sessionKey) || this.fileStore?.get(sessionKey);
 
       const { executable, initialArgs } = this.parseCommand();
 
@@ -111,9 +117,12 @@ export class CliRuntime implements Runtime {
 
       if (existingSessionId) {
         args.push("--resume", existingSessionId);
+        // Ensure in-memory map is populated (may have been loaded from file store)
+        this.sessions.set(sessionKey, existingSessionId);
       } else {
         const newSessionId = randomUUID();
         this.sessions.set(sessionKey, newSessionId);
+        this.fileStore?.set(sessionKey, newSessionId);
         args.push("--session-id", newSessionId);
       }
 
@@ -256,6 +265,7 @@ export class CliRuntime implements Runtime {
             stderr: stderr.slice(0, 1000) || undefined
           });
           this.sessions.delete(sessionKey);
+          this.fileStore?.delete(sessionKey);
         }
 
         const response = stdoutChunks.join("").trim();

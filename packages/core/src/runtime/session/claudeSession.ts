@@ -8,6 +8,14 @@ export class ClaudeSession implements AgentSession {
   readonly sessionId = randomUUID();
   private state: NativeSessionState | undefined;
 
+  get resumeId(): string | undefined {
+    return this.state?.nativeSessionId;
+  }
+
+  setResumeId(id: string): void {
+    this.state = { strategy: "native", nativeSessionId: id };
+  }
+
   constructor(
     readonly channelId: string,
     readonly chatId: string,
