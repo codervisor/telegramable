@@ -51,6 +51,9 @@ COPY --from=builder /deploy/cli ./cli/
 COPY start.sh ./
 RUN chmod +x ./start.sh
 
+# Persistent data directory (mount a Railway Volume at /data)
+RUN mkdir -p /data && chown claude:claude /data
+
 # Ensure the non-root user owns the app directory
 RUN chown -R claude:claude /app
 
