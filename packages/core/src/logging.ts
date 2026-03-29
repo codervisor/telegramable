@@ -14,11 +14,67 @@ export interface Logger {
   error: (message: string, meta?: Record<string, unknown>) => void;
 }
 
+const formatValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value);
+};
+
 const formatMeta = (meta?: Record<string, unknown>): string => {
   if (!meta || Object.keys(meta).length === 0) {
     return "";
   }
-  return ` ${JSON.stringify(meta)}`;
+  const entries = Object.entries(meta).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) {
+    return "";
+  }
+  // Single short entry: inline
+  if (entries.length === 1) {
+    const [key, value] = entries[0];
+    const formatted = formatValue(value);
+    if (formatted.length <= 120) {
+      return ` ${key}=${formatted}`;
+    }
+    // Long single value: put on next line
+    return `\n  ${key}=${formatted}`;
+  }
+  // Multiple entries: one per line for readability
+  const lines = entries.map(([key, value]) => `  ${key}=${formatValue(value)}`);
+  return `\n${lines.join("\n")}`;
+};
+
+const levelLabel: Record<LogLevel, string> = {
+  debug: "DBG",
+  info:  "INF",
+  warn:  "WRN",
+  error: "ERR"
+};
+
+const isTTY = typeof process !== "undefined" && process.stdout?.isTTY;
+
+const dim = (text: string): string => (isTTY ? `\x1b[2m${text}\x1b[22m` : text);
+const bold = (text: string): string => (isTTY ? `\x1b[1m${text}\x1b[22m` : text);
+const yellow = (text: string): string => (isTTY ? `\x1b[33m${text}\x1b[39m` : text);
+const red = (text: string): string => (isTTY ? `\x1b[31m${text}\x1b[39m` : text);
+const cyan = (text: string): string => (isTTY ? `\x1b[36m${text}\x1b[39m` : text);
+
+const colorLevel = (target: LogLevel): string => {
+  const label = levelLabel[target];
+  switch (target) {
+    case "debug": return dim(label);
+    case "info":  return cyan(label);
+    case "warn":  return yellow(label);
+    case "error": return bold(red(label));
+  }
+};
+
+const formatTimestamp = (date: Date): string => {
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  const ms = String(date.getMilliseconds()).padStart(3, "0");
+  return `${h}:${m}:${s}.${ms}`;
 };
 
 export const createLogger = (level: LogLevel): Logger => {
@@ -28,8 +84,10 @@ export const createLogger = (level: LogLevel): Logger => {
     if (levelOrder[target] < threshold) {
       return;
     }
-    const timestamp = new Date().toISOString();
-    const output = `[${timestamp}] ${target.toUpperCase()} ${message}${formatMeta(meta)}`;
+    const timestamp = dim(formatTimestamp(new Date()));
+    const label = colorLevel(target);
+    const metaStr = formatMeta(meta);
+    const output = `${timestamp} ${label} ${message}${metaStr}`;
     if (target === "error") {
       console.error(output);
       return;
