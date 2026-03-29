@@ -20,14 +20,20 @@ on_signal() {
 
 trap 'on_signal' INT TERM
 
-# Wait for the first process to exit
-if ! wait -n "$WEB_PID" "$CLI_PID"; then
+# Poll until either process exits
+while kill -0 "$WEB_PID" 2>/dev/null && kill -0 "$CLI_PID" 2>/dev/null; do
+  sleep 1
+done
+
+# One process has exited — check which
+if ! kill -0 "$WEB_PID" 2>/dev/null; then
+  wait "$WEB_PID"
   status=$?
-  terminate
-  wait "$WEB_PID" "$CLI_PID" 2>/dev/null
-  exit "$status"
+else
+  wait "$CLI_PID"
+  status=$?
 fi
 
-# First process exited successfully; wait for the remaining one
-wait "$WEB_PID" "$CLI_PID"
-exit $?
+terminate
+wait "$WEB_PID" "$CLI_PID" 2>/dev/null
+exit "$status"
