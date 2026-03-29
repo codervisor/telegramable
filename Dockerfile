@@ -30,12 +30,15 @@ FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install Claude Code CLI
+# Create non-root user (required: Claude CLI refuses --dangerously-skip-permissions as root)
+RUN groupadd -r claude && useradd -r -g claude -m -d /home/claude claude
+
+# Install Claude Code CLI as non-root user
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
-    curl -fsSL https://claude.ai/install.sh | bash && \
+    su claude -c 'curl -fsSL https://claude.ai/install.sh | bash' && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-ENV PATH="/root/.local/bin:/root/.claude/local/bin:${PATH}"
+ENV PATH="/home/claude/.local/bin:/home/claude/.claude/local/bin:${PATH}"
 
 # Web — Next.js standalone output
 COPY --from=builder /app/apps/web/.next/standalone ./web/
@@ -48,8 +51,12 @@ COPY --from=builder /deploy/cli ./cli/
 COPY start.sh ./
 RUN chmod +x ./start.sh
 
+# Ensure the non-root user owns the app directory
+RUN chown -R claude:claude /app
+
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+USER claude
 CMD ["./start.sh"]
