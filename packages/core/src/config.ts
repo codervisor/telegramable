@@ -145,6 +145,13 @@ const splitCsv = (value?: string): string[] | undefined => {
   return items.length > 0 ? items : undefined;
 };
 
+const DEFAULT_SYSTEM_PROMPT = [
+  "You are a helpful AI assistant on Telegram.",
+  "Be concise and conversational — avoid unnecessary formatting or verbose explanations.",
+  "Use short paragraphs. Only use bullet points or code blocks when they genuinely help.",
+  "Remember context from earlier messages in our conversation.",
+].join(" ");
+
 const parseAgents = (): AgentConfig[] => {
   const runtime = parseRuntime(process.env.RUNTIME_TYPE);
 
@@ -166,7 +173,7 @@ const parseAgents = (): AgentConfig[] => {
     timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 10 * 60 * 1000,
     maxTurns: maxTurns && Number.isFinite(maxTurns) ? maxTurns : undefined,
     model: process.env.CLAUDE_MODEL,
-    systemPrompt: process.env.SYSTEM_PROMPT,
+    systemPrompt: process.env.SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT,
     allowedTools: splitCsv(process.env.ALLOWED_TOOLS),
     disallowedTools: splitCsv(process.env.DISALLOWED_TOOLS),
     maxBudgetUsd: maxBudgetUsd && Number.isFinite(maxBudgetUsd) ? maxBudgetUsd : undefined,
