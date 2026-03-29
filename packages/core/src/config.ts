@@ -157,7 +157,6 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Be concise and conversational — avoid unnecessary formatting or verbose explanations.",
   "Use short paragraphs. Only use bullet points or code blocks when they genuinely help.",
   "Remember context from earlier messages in our conversation.",
-  "Always respond to what the user said — never claim their message is incomplete or empty.",
 ].join(" ");
 
 const parseAgents = (): AgentConfig[] => {
