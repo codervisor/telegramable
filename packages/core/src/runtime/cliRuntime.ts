@@ -123,9 +123,30 @@ export class CliRuntime implements Runtime {
       });
 
       const stdoutChunks: string[] = [];
+      const stderrChunks: string[] = [];
+      let receivedAnyOutput = false;
+      const timeoutMs = this.config.timeoutMs ?? 10 * 60 * 1000;
+
+      // Periodic "still alive" logging to diagnose hangs
+      const heartbeat = setInterval(() => {
+        this.logger.warn("CLI runtime still running — no exit yet.", {
+          executionId,
+          pid: child.pid,
+          receivedAnyOutput,
+          stdoutBytes: stdoutChunks.join("").length,
+          stderrBytes: stderrChunks.join("").length
+        });
+      }, 30_000);
 
       const timeout: NodeJS.Timeout = setTimeout(() => {
         child.kill("SIGKILL");
+        this.logger.error("CLI runtime timeout — killing process.", {
+          executionId,
+          pid: child.pid,
+          timeoutMs,
+          receivedAnyOutput,
+          stderr: stderrChunks.join("").slice(0, 500)
+        });
         eventBus.emit({
           executionId,
           channelId: message.channelId,
@@ -135,9 +156,10 @@ export class CliRuntime implements Runtime {
           payload: { reason: "Runtime timeout." }
         });
         reject(new Error("Runtime timeout."));
-      }, this.config.timeoutMs ?? 10 * 60 * 1000);
+      }, timeoutMs);
 
       child.stdout?.on("data", (chunk: Buffer) => {
+        receivedAnyOutput = true;
         const text = chunk.toString();
         stdoutChunks.push(text);
         eventBus.emit({
@@ -151,24 +173,30 @@ export class CliRuntime implements Runtime {
       });
 
       child.stderr?.on("data", (chunk: Buffer) => {
+        receivedAnyOutput = true;
+        const text = chunk.toString();
+        stderrChunks.push(text);
+        this.logger.warn("CLI stderr output.", { executionId, text: text.slice(0, 500) });
         eventBus.emit({
           executionId,
           channelId: message.channelId,
           chatId: message.chatId,
           type: "stderr",
           timestamp: Date.now(),
-          payload: { text: chunk.toString() }
+          payload: { text }
         });
       });
 
       child.on("error", (error: NodeJS.ErrnoException) => {
         clearTimeout(timeout);
+        clearInterval(heartbeat);
         let reason = error.message;
         if (error.code === "ENOENT") {
           reason = this.config.workingDir && !existsSync(this.config.workingDir)
             ? `Working directory not found: ${this.config.workingDir}`
             : `Command not found: "${executable}". Ensure it is installed and available in PATH.`;
         }
+        this.logger.error("CLI runtime process error.", { executionId, reason, code: error.code });
         eventBus.emit({
           executionId,
           channelId: message.channelId,
@@ -182,6 +210,18 @@ export class CliRuntime implements Runtime {
 
       child.on("close", (code: number | null) => {
         clearTimeout(timeout);
+        clearInterval(heartbeat);
+
+        const stderr = stderrChunks.join("").trim();
+
+        this.logger.info("CLI runtime exited.", {
+          executionId,
+          pid: child.pid,
+          exitCode: code,
+          stdoutBytes: stdoutChunks.join("").length,
+          stderrBytes: stderr.length,
+          stderr: stderr.slice(0, 500) || undefined
+        });
 
         // Exit code 127 means the shell could not find the command
         if (code === 127) {
@@ -200,10 +240,19 @@ export class CliRuntime implements Runtime {
 
         // If the CLI failed, clear the session so the next attempt starts fresh
         if (code !== 0) {
+          this.logger.warn("CLI runtime exited with non-zero code.", {
+            executionId,
+            exitCode: code,
+            stderr: stderr.slice(0, 1000) || undefined
+          });
           this.sessions.delete(sessionKey);
         }
 
         const response = stdoutChunks.join("").trim();
+        if (!response && code === 0) {
+          this.logger.warn("CLI runtime exited successfully but produced no stdout output.", { executionId });
+        }
+
         eventBus.emit({
           executionId,
           channelId: message.channelId,
@@ -218,8 +267,13 @@ export class CliRuntime implements Runtime {
       this.logger.info("Spawned CLI runtime.", {
         executionId,
         command: this.config.command,
+        fullArgs: args.slice(0, -1).join(" "),  // omit user prompt for brevity
         sessionId: this.sessions.get(sessionKey),
-        resumed: !!existingSessionId
+        resumed: !!existingSessionId,
+        pid: child.pid,
+        hasOAuthToken: !!process.env.CLAUDE_CODE_OAUTH_TOKEN,
+        hasApiKey: !!process.env.ANTHROPIC_API_KEY,
+        cwd: this.config.workingDir || "(inherited)"
       });
     });
   }
