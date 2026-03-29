@@ -154,7 +154,6 @@ export class CliRuntime implements Runtime {
 
       const child = spawn(executable, args, {
         cwd: this.config.workingDir,
-        shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
