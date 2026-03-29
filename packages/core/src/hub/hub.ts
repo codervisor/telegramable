@@ -10,11 +10,40 @@ import { ExecutionRegistry, InMemoryExecutionRegistry } from "./executionRegistr
 import { PermissionBridge } from "./permissionBridge";
 import { Router } from "./router";
 
+const TELEGRAM_MSG_LIMIT = 4000;
+
 const truncate = (text: string, max: number): string => {
   if (text.length <= max) {
     return text;
   }
   return `${text.slice(0, max - 3)}...`;
+};
+
+/**
+ * Split text into chunks that fit within Telegram's message limit.
+ * Tries to break at paragraph boundaries, then line boundaries, then hard-cuts.
+ */
+const splitMessage = (text: string, max: number = TELEGRAM_MSG_LIMIT): string[] => {
+  if (text.length <= max) {
+    return [text];
+  }
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > max) {
+    let splitAt = remaining.lastIndexOf("\n\n", max);
+    if (splitAt <= 0) {
+      splitAt = remaining.lastIndexOf("\n", max);
+    }
+    if (splitAt <= 0) {
+      splitAt = max;
+    }
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).replace(/^\n+/, "");
+  }
+  if (remaining.length > 0) {
+    chunks.push(remaining);
+  }
+  return chunks;
 };
 
 type BuiltinCommand =
@@ -418,7 +447,10 @@ export class ChannelHub {
 
     const text = formatEvent(event);
     if (text) {
-      await adapter.sendMessage(event.chatId, text);
+      const chunks = splitMessage(text);
+      for (const chunk of chunks) {
+        await adapter.sendMessage(event.chatId, chunk);
+      }
     }
   }
 
@@ -493,12 +525,30 @@ export class ChannelHub {
 
     draft.text += text;
 
+    // If accumulated text exceeds the limit, finalize current message and start a new one
+    if (draft.text.length > TELEGRAM_MSG_LIMIT && draft.messageId && adapter.editMessage) {
+      // Find a clean split point in the current draft
+      let splitAt = draft.text.lastIndexOf("\n\n", TELEGRAM_MSG_LIMIT);
+      if (splitAt <= 0) splitAt = draft.text.lastIndexOf("\n", TELEGRAM_MSG_LIMIT);
+      if (splitAt <= 0) splitAt = TELEGRAM_MSG_LIMIT;
+
+      const finalized = draft.text.slice(0, splitAt);
+      const overflow = draft.text.slice(splitAt).replace(/^\n+/, "");
+
+      // Finalize the current message with the first chunk
+      await adapter.editMessage(event.chatId, draft.messageId, escapeHtml(finalized)).catch(() => {});
+
+      // Reset draft for the overflow — next update will create a new message
+      draft.text = overflow;
+      draft.messageId = undefined;
+      return;
+    }
+
     // Throttle edits: only update every ~500 chars or if we haven't sent yet
     const shouldUpdate = !draft.messageId || draft.text.length % 500 < text.length;
 
     if (shouldUpdate && adapter.editMessage && draft.messageId) {
-      const displayText = truncate(draft.text, 4000);
-      await adapter.editMessage(event.chatId, draft.messageId, escapeHtml(displayText)).catch(() => {
+      await adapter.editMessage(event.chatId, draft.messageId, escapeHtml(draft.text)).catch(() => {
         // Edit might fail if message was deleted; non-critical
       });
     } else if (!draft.messageId) {
@@ -506,13 +556,13 @@ export class ChannelHub {
       if (adapter.sendMessageWithMarkup) {
         const messageId = await adapter.sendMessageWithMarkup(
           event.chatId,
-          escapeHtml(truncate(draft.text, 4000)),
+          escapeHtml(draft.text.length <= TELEGRAM_MSG_LIMIT ? draft.text : draft.text.slice(0, TELEGRAM_MSG_LIMIT)),
           undefined,
           { threadId: topicId }
         );
         draft.messageId = messageId;
       } else {
-        await adapter.sendMessage(event.chatId, truncate(draft.text, 3500));
+        await adapter.sendMessage(event.chatId, draft.text.length <= TELEGRAM_MSG_LIMIT ? draft.text : draft.text.slice(0, TELEGRAM_MSG_LIMIT));
       }
     }
   }
@@ -522,10 +572,20 @@ export class ChannelHub {
     const draft = this.streamDrafts.get(draftKey);
     if (!draft) return;
 
-    // Final edit with complete text
+    const chunks = splitMessage(draft.text);
+
     if (draft.messageId && adapter.editMessage) {
-      const displayText = truncate(draft.text, 4000);
-      await adapter.editMessage(chatId, draft.messageId, escapeHtml(displayText)).catch(() => {});
+      // Edit existing message with first chunk
+      await adapter.editMessage(chatId, draft.messageId, escapeHtml(chunks[0])).catch(() => {});
+      // Send remaining chunks as new messages
+      for (let i = 1; i < chunks.length; i++) {
+        await adapter.sendMessage(chatId, escapeHtml(chunks[i]));
+      }
+    } else if (chunks.length > 0) {
+      // No existing message — send all chunks
+      for (const chunk of chunks) {
+        await adapter.sendMessage(chatId, escapeHtml(chunk));
+      }
     }
 
     this.streamDrafts.delete(draftKey);
