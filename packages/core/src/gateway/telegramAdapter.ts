@@ -200,6 +200,15 @@ export class TelegramAdapter implements IMAdapter {
     return topic.message_thread_id;
   }
 
+  async sendChatAction(chatId: string, action: string, options?: { threadId?: number }): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not started.");
+    }
+    await this.bot.api.sendChatAction(Number(chatId), action as Parameters<Bot["api"]["sendChatAction"]>[1], {
+      message_thread_id: options?.threadId
+    });
+  }
+
   async closeForumTopic(chatId: string, topicId: number): Promise<void> {
     if (!this.bot) {
       throw new Error("Telegram bot not started.");

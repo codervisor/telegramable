@@ -41,4 +41,5 @@ export interface IMAdapter {
   getFileUrl?: (fileId: string) => Promise<string>;
   createForumTopic?: (chatId: string, name: string) => Promise<number>;
   closeForumTopic?: (chatId: string, topicId: number) => Promise<void>;
+  sendChatAction?: (chatId: string, action: string, options?: { threadId?: number }) => Promise<void>;
 }

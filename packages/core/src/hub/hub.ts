@@ -75,6 +75,7 @@ export class ChannelHub {
   private readonly permissionBridge: PermissionBridge;
   private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
   private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
+  private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
   private unsubscribeEvents?: () => void;
 
   constructor(
@@ -114,6 +115,12 @@ export class ChannelHub {
     }
 
     this.permissionBridge.cancelAll();
+
+    // Clear all typing indicator intervals
+    for (const interval of this.typingIntervals.values()) {
+      clearInterval(interval);
+    }
+    this.typingIntervals.clear();
 
     for (const throttler of this.chunkThrottlers.values()) {
       await throttler.flush();
@@ -192,6 +199,11 @@ export class ChannelHub {
       channelId: message.channelId,
       chatId: message.chatId
     });
+
+    // Start typing indicator immediately so user sees activity
+    if (adapter) {
+      this.startTypingIndicator(adapter, message.chatId, executionId, this.getTopicId(message.channelId, message.chatId, executionId));
+    }
 
     try {
       await runtime.execute(routedMessage, executionId, this.eventBus);
@@ -303,6 +315,32 @@ export class ChannelHub {
     }
   }
 
+  private startTypingIndicator(adapter: IMAdapter, chatId: string, executionId: string, topicId?: number): void {
+    if (!adapter.sendChatAction) return;
+
+    const key = `${adapter.id}:${chatId}:${executionId}`;
+
+    // Send immediately, then repeat every 4s (Telegram typing expires after ~5s)
+    const sendTyping = () => {
+      adapter.sendChatAction!(chatId, "typing", { threadId: topicId }).catch(() => {
+        // Non-critical — chat action may fail if bot was blocked
+      });
+    };
+
+    sendTyping();
+    const interval = setInterval(sendTyping, 4_000);
+    this.typingIntervals.set(key, interval);
+  }
+
+  private stopTypingIndicator(channelId: string, chatId: string, executionId: string): void {
+    const key = `${channelId}:${chatId}:${executionId}`;
+    const interval = this.typingIntervals.get(key);
+    if (interval) {
+      clearInterval(interval);
+      this.typingIntervals.delete(key);
+    }
+  }
+
   private async forwardEvent(adapter: IMAdapter, event: ExecutionEvent): Promise<void> {
     const topicId = this.getTopicId(event.channelId, event.chatId, event.executionId);
 
@@ -314,11 +352,15 @@ export class ChannelHub {
 
     // Handle streaming text — accumulate and edit message in-place
     if (event.type === "stream-text") {
+      // Stop typing indicator once we start streaming actual text
+      this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
       await this.forwardStreamText(adapter, event, topicId);
       return;
     }
 
     if (event.type === "complete" || event.type === "error") {
+      // Always stop typing indicator on completion
+      this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
       await this.flushAndDeleteThrottler(event.channelId, event.chatId);
       await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
 
