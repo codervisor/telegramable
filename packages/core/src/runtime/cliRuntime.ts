@@ -59,9 +59,9 @@ export class CliRuntime implements Runtime {
       args.push("--model", this.config.model);
     }
 
-    const systemPrompt = (this.config.systemPrompt || "") + (this.getSystemPromptSuffix?.() || "");
-    if (systemPrompt) {
-      args.push("--append-system-prompt", systemPrompt);
+    const memorySuffix = this.getSystemPromptSuffix?.() || "";
+    if (memorySuffix) {
+      args.push("--append-system-prompt", memorySuffix);
     }
 
     if (this.config.permissionMode) {

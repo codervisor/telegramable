@@ -271,7 +271,7 @@ test("CliRuntime passes config flags to the command", async () => {
 
   const stdout = events.filter((e) => e.type === "stream-text").map((e) => e.payload?.text).join("");
   assert.ok(stdout.includes("--model opus"), "should include --model");
-  assert.ok(stdout.includes("--append-system-prompt"), "should include --append-system-prompt");
+  assert.ok(!stdout.includes("--append-system-prompt"), "should not pass systemPrompt via --append-system-prompt");
   assert.ok(stdout.includes("--permission-mode plan"), "should include --permission-mode");
   assert.ok(stdout.includes("--max-turns 5"), "should include --max-turns");
   assert.ok(stdout.includes("--output-format json"), "should include --output-format");
