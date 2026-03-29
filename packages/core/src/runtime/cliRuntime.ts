@@ -38,7 +38,17 @@ export class CliRuntime implements Runtime {
     }
 
     if (this.config.permissionMode) {
-      args.push("--permission-mode", this.config.permissionMode);
+      // Claude CLI refuses bypassPermissions (--dangerously-skip-permissions) when running as root.
+      // Fall back to "auto" with a warning so the runtime doesn't silently exit.
+      if (this.config.permissionMode === "bypassPermissions" && process.getuid?.() === 0) {
+        this.logger.warn(
+          "bypassPermissions is not allowed as root — falling back to 'auto'. " +
+          "Run the container as a non-root user to use bypassPermissions."
+        );
+        args.push("--permission-mode", "auto");
+      } else {
+        args.push("--permission-mode", this.config.permissionMode);
+      }
     }
 
     if (this.config.allowedTools?.length) {
