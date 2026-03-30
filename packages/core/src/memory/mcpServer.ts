@@ -119,5 +119,36 @@ export const createMemoryMcpServer = (options: MemoryMcpServerOptions): McpServe
     },
   );
 
+  server.tool(
+    "search_memories",
+    "Search memories by keyword. Use this to check if something is already remembered before saving a duplicate.",
+    {
+      query: z.string().describe("Search term to match against memory text and tags."),
+    },
+    async ({ query }) => {
+      const results = memoryStore.search(query);
+      if (results.length === 0) {
+        return { content: [{ type: "text", text: `No memories matching "${query}".` }] };
+      }
+      const lines = results.map((f) => `${f.id} [${f.tag}] ${f.text} (${f.at})`);
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    },
+  );
+
+  server.tool(
+    "get_memory",
+    "Get a specific memory by ID.",
+    {
+      id: z.string().describe("The memory ID (e.g. 'f001')."),
+    },
+    async ({ id }) => {
+      const fact = memoryStore.get(id);
+      if (!fact) {
+        return { content: [{ type: "text", text: `Memory ${id} not found.` }] };
+      }
+      return { content: [{ type: "text", text: `${fact.id} [${fact.tag}] ${fact.text} (${fact.at})` }] };
+    },
+  );
+
   return server;
 };
