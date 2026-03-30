@@ -88,6 +88,16 @@ On startup the bot loads the pinned memory snapshot and syncs changes back after
 
 Use **Option 1** (`ANTHROPIC_API_KEY`) if you have an Anthropic API account. Use **Option 2** (`MEMORY_LLM_BASE_URL` + `MEMORY_LLM_API_KEY`) for any OpenAI-compatible provider — e.g., OpenRouter, Ollama, vLLM, or Together AI.
 
+**Example — OpenRouter (recommended if you only have Claude Pro/Max):**
+
+```bash
+MEMORY_LLM_BASE_URL=https://openrouter.ai/api/v1
+MEMORY_LLM_API_KEY=sk-or-v1-your-key
+MEMORY_LLM_MODEL=anthropic/claude-haiku-4-5-20251001
+```
+
+Sign up at [openrouter.ai](https://openrouter.ai), create an API key, and pick any cheap model for extraction (Haiku, Gemini Flash, etc.).
+
 **User commands:**
 
 | Command                    | Description             |
