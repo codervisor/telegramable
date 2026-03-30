@@ -64,11 +64,11 @@ Supported runtimes: `cli`, `session-claude`, `session-claude-sdk`, `session-gemi
 Persist facts across sessions using a pinned Telegram message as storage. Set `MEMORY_CHAT_ID` to enable:
 
 ```bash
-MEMORY_CHAT_ID=-1001234567890   # dedicated channel/group for memory
-MEMORY_TOPIC_ID=2               # optional, for forum groups
+MEMORY_CHAT_ID=@my_agent_memory   # public channel/group username
+MEMORY_TOPIC_ID=2                 # optional, for forum groups
 ```
 
-Create a private channel or group, add your bot as admin, and grab the chat ID (see [Finding Telegram Chat IDs](#finding-telegram-chat-ids)).
+Create a channel or group, add your bot as admin, and use its `@username`. Numeric IDs (e.g., `-1001234567890`) also work — see [Finding Telegram Chat IDs](#finding-telegram-chat-ids) for private chats without a username.
 
 **Automatic extraction** uses a cheap LLM to pick up facts from conversations. It auto-detects from env vars you likely already have:
 
@@ -122,12 +122,12 @@ Several config values require numeric Telegram IDs. Here's how to get each one.
 2. Look at the URL in Telegram Desktop or Web — it ends with `/<topicId>` (e.g., `.../2`).
 3. Or use the `getUpdates` method above — the topic ID appears as `"message_thread_id"` in messages sent within a topic.
 
-**Example `.env` with all IDs:**
+**Example `.env`:**
 
 ```bash
 TELEGRAM_BOT_TOKEN=7123456789:AAF...
 ALLOWED_USER_IDS=123456789,987654321
-MEMORY_CHAT_ID=-1001234567890
+MEMORY_CHAT_ID=@my_agent_memory      # or -1001234567890
 MEMORY_TOPIC_ID=2
 ```
 
