@@ -429,9 +429,7 @@ export class ChannelHub {
       await this.flushAndDeleteThrottler(event.channelId, event.chatId);
 
       // Flush stream draft and check if we already streamed the response
-      const draftKey = `${event.channelId}:${event.chatId}:${event.executionId}`;
-      const hadStreamDraft = this.streamDrafts.has(draftKey);
-      await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
+      const flushedContent = await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
 
       // Close forum topic on completion
       if (topicId && adapter.closeForumTopic) {
@@ -442,7 +440,7 @@ export class ChannelHub {
       }
 
       // Skip sending duplicate response if we already streamed it in-place
-      if (hadStreamDraft && event.type === "complete") {
+      if (flushedContent && event.type === "complete") {
         return;
       }
     }
@@ -569,15 +567,15 @@ export class ChannelHub {
     }
   }
 
-  private async flushStreamDraft(adapter: IMAdapter, channelId: string, chatId: string, executionId: string): Promise<void> {
+  private async flushStreamDraft(adapter: IMAdapter, channelId: string, chatId: string, executionId: string): Promise<boolean> {
     const draftKey = `${channelId}:${chatId}:${executionId}`;
     const draft = this.streamDrafts.get(draftKey);
-    if (!draft) return;
+    if (!draft) return false;
 
     const trimmedText = draft.text.trim();
     if (!trimmedText) {
       this.streamDrafts.delete(draftKey);
-      return;
+      return false;
     }
 
     const chunks = splitMessage(trimmedText);
@@ -597,6 +595,7 @@ export class ChannelHub {
     }
 
     this.streamDrafts.delete(draftKey);
+    return true;
   }
 
   private getChunkThrottler(channelId: string, chatId: string, adapter: IMAdapter): ChunkThrottler {
