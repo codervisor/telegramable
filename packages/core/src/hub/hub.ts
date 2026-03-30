@@ -136,6 +136,7 @@ export class ChannelHub {
   private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
   private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
+  private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private unsubscribeEvents?: () => void;
 
   constructor(
@@ -189,6 +190,7 @@ export class ChannelHub {
       throttler.destroy();
     }
     this.chunkThrottlers.clear();
+    this.eventQueues.clear();
 
     await Promise.all(Array.from(this.adapters.values()).map((adapter) => adapter.stop()));
     this.logger.info("ChannelHub stopped.");
@@ -199,7 +201,7 @@ export class ChannelHub {
       return;
     }
 
-    this.unsubscribeEvents = this.eventBus.on(async (event) => {
+    this.unsubscribeEvents = this.eventBus.on((event) => {
       const adapter = this.adapters.get(event.channelId);
       if (!adapter) {
         this.logger.warn("No adapter found for execution event.", {
@@ -211,15 +213,29 @@ export class ChannelHub {
 
       this.trackEvent(event);
 
-      try {
-        await this.forwardEvent(adapter, event);
-      } catch (error) {
-        this.logger.error("Failed to dispatch execution event.", {
-          channelId: event.channelId,
-          executionId: event.executionId,
-          reason: error instanceof Error ? error.message : "unknown"
-        });
-      }
+      // Serialize event processing per execution to prevent race conditions
+      // (e.g. stream-text sendMessage not yet resolved when complete fires)
+      const queueKey = event.executionId;
+      const prev = this.eventQueues.get(queueKey) ?? Promise.resolve();
+      const next = prev.then(async () => {
+        try {
+          await this.forwardEvent(adapter, event);
+        } catch (error) {
+          this.logger.error("Failed to dispatch execution event.", {
+            channelId: event.channelId,
+            executionId: event.executionId,
+            reason: error instanceof Error ? error.message : "unknown"
+          });
+        }
+      });
+      this.eventQueues.set(queueKey, next);
+
+      // Clean up queue entry when chain settles
+      void next.then(() => {
+        if (this.eventQueues.get(queueKey) === next) {
+          this.eventQueues.delete(queueKey);
+        }
+      });
     });
   }
 
