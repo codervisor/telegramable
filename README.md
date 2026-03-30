@@ -72,7 +72,7 @@ Telegramable can persist facts across sessions using Telegram itself as the stor
 
 1. Create a private channel or group in Telegram for memory storage.
 2. Add your bot to that channel/group as an admin.
-3. Copy the chat ID (you can use `@userinfobot` or the Telegram API to find it).
+3. Get the chat ID (see [Finding Telegram Chat IDs](#finding-telegram-chat-ids) below).
 4. Set `MEMORY_CHAT_ID` in your `.env`. If using a forum group, also set `MEMORY_TOPIC_ID`.
 
 On startup the bot loads the pinned memory snapshot and syncs changes back after each conversation.
@@ -107,6 +107,48 @@ Sign up at [openrouter.ai](https://openrouter.ai), create an API key, and pick a
 | `/memory edit <id> <text>` | Update a fact           |
 | `/memory delete <id>`      | Remove a fact           |
 | `/memory export`           | Export facts as JSON    |
+
+### Finding Telegram Chat IDs
+
+Several config values require numeric Telegram IDs. Here's how to get each one.
+
+**Bot token** (`TELEGRAM_BOT_TOKEN`):
+1. Message [@BotFather](https://t.me/BotFather) on Telegram.
+2. Send `/newbot`, follow the prompts, and copy the token it gives you.
+
+**Your user ID** (`ALLOWED_USER_IDS`):
+1. Message [@userinfobot](https://t.me/userinfobot) on Telegram.
+2. It replies with your numeric user ID (e.g., `123456789`).
+
+**Group/channel chat ID** (`MEMORY_CHAT_ID`):
+
+*Option A — use the bot API directly:*
+1. Add your bot to the group/channel as an admin.
+2. Send any message in that chat.
+3. Open this URL in your browser (replace `<TOKEN>` with your bot token):
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+4. Look for `"chat":{"id":-100xxxxxxxxxx}` in the response. That negative number is the chat ID.
+
+*Option B — use [@RawDataBot](https://t.me/RawDataBot):*
+1. Add `@RawDataBot` to your group temporarily.
+2. It prints the chat info including the chat ID.
+3. Remove the bot afterward.
+
+**Forum topic ID** (`MEMORY_TOPIC_ID`):
+1. In a group with Topics enabled, open the target topic.
+2. Look at the URL in Telegram Desktop or Web — it ends with `/<topicId>` (e.g., `.../2`).
+3. Or use the `getUpdates` method above — the topic ID appears as `"message_thread_id"` in messages sent within a topic.
+
+**Example `.env` with all IDs:**
+
+```bash
+TELEGRAM_BOT_TOKEN=7123456789:AAF...
+ALLOWED_USER_IDS=123456789,987654321
+MEMORY_CHAT_ID=-1001234567890
+MEMORY_TOPIC_ID=2
+```
 
 Multi-channel and multi-agent setups will be managed via CLI commands (e.g., `telegramable channel add`, `telegramable agent add`) — see spec 018.
 
