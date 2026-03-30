@@ -61,14 +61,20 @@ Supported runtimes: `cli`, `session-claude`, `session-claude-sdk`, `session-gemi
 
 ### Long-Term Memory
 
-Persist facts across sessions using a pinned Telegram message as storage. Set `MEMORY_CHAT_ID` to enable:
+Persist facts across sessions using a pinned Telegram message as storage.
 
-```bash
-MEMORY_CHAT_ID=@my_agent_memory   # public channel/group username
-MEMORY_TOPIC_ID=2                 # optional, for forum groups
-```
+**Create a memory chat:**
 
-Create a channel or group, add your bot as admin, and use its `@username`. Numeric IDs (e.g., `-1001234567890`) also work — see [Finding Telegram Chat IDs](#finding-telegram-chat-ids) for private chats without a username.
+1. Open Telegram → New Channel (or New Group).
+2. Name it anything (e.g., "Agent Memory").
+3. Set it to **Public** and pick a username (e.g., `my_agent_memory`).
+4. Go to channel settings → Administrators → **Add your bot** as admin.
+5. Add to `.env`:
+   ```bash
+   MEMORY_CHAT_ID=@my_agent_memory
+   ```
+
+That's it. On first startup the bot pins a JSON message in the channel and uses it as persistent storage. You can make the channel private afterward — the bot resolves the username to an ID on boot.
 
 **Automatic extraction** uses a cheap LLM to pick up facts from conversations. It auto-detects from env vars you likely already have:
 
