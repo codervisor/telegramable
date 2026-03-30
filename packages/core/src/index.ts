@@ -51,6 +51,14 @@ export async function startDaemon(): Promise<void> {
       const memBot = new Bot(telegramChannel.token);
       await memBot.init();
 
+      // Resolve @username to numeric chat ID if needed
+      const rawChatId = config.memory.chatId;
+      if (rawChatId.startsWith("@") || !/^-?\d+$/.test(rawChatId)) {
+        const chat = await memBot.api.getChat(rawChatId);
+        config.memory.chatId = String(chat.id);
+        logger.info("Resolved memory chat.", { from: rawChatId, to: chat.id });
+      }
+
       memorySync = new MemorySync(memBot, config.memory, logger);
       memoryStore = new MemoryStore();
 
