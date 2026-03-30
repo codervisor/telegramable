@@ -49,6 +49,8 @@ Set environment variables in `.env` or your deployment platform (Railway, Docker
 | ------------------- | -------- | ---------------------------------- |
 | TELEGRAM_BOT_TOKEN  | -        | Telegram bot token (required)      |
 | TELEGRAM_CHANNEL_ID | telegram | Channel identifier (optional)      |
+| ALLOWED_USER_IDS    | -        | Comma-separated Telegram user IDs  |
+| RUNTIME_TYPE        | cli      | Runtime type (see below)           |
 | RUNTIME_COMMAND     | -        | Agent command (e.g., `copilot`)    |
 | RUNTIME_WORKING_DIR | -        | Working directory for the agent    |
 | RUNTIME_TIMEOUT_MS  | 600000   | Agent execution timeout in ms      |
@@ -56,6 +58,36 @@ Set environment variables in `.env` or your deployment platform (Railway, Docker
 | LOG_LEVEL           | info     | Log verbosity (`debug`, `info`, `warn`, `error`) |
 
 Supported runtimes: `cli`, `session-claude`, `session-claude-sdk`, `session-gemini`, `session-copilot`.
+
+### Long-Term Memory
+
+Telegramable can persist facts across sessions using Telegram itself as the storage backend. The agent automatically extracts key facts from conversations and stores them as a pinned JSON message in a dedicated Telegram chat.
+
+| Variable          | Default | Description                                    |
+| ----------------- | ------- | ---------------------------------------------- |
+| MEMORY_CHAT_ID    | -       | Telegram chat ID for memory storage (enables memory) |
+| MEMORY_TOPIC_ID   | -       | Forum topic ID within the chat (optional)      |
+| ANTHROPIC_API_KEY  | -       | Required for memory extraction (uses Haiku)    |
+
+**Setup:**
+
+1. Create a private channel or group in Telegram for memory storage.
+2. Add your bot to that channel/group as an admin.
+3. Copy the chat ID (you can use `@userinfobot` or the Telegram API to find it).
+4. Set `MEMORY_CHAT_ID` in your `.env`. If using a forum group, also set `MEMORY_TOPIC_ID`.
+5. Set `ANTHROPIC_API_KEY` — the memory extractor uses Claude Haiku to analyze conversations.
+
+On startup the bot loads the pinned memory snapshot. After each conversation turn, new facts are extracted automatically and synced back to the pinned message.
+
+**User commands:**
+
+| Command                    | Description             |
+| -------------------------- | ----------------------- |
+| `/memory`                  | List all stored facts   |
+| `/memory search <query>`   | Search facts by keyword |
+| `/memory edit <id> <text>` | Update a fact           |
+| `/memory delete <id>`      | Remove a fact           |
+| `/memory export`           | Export facts as JSON    |
 
 Multi-channel and multi-agent setups will be managed via CLI commands (e.g., `telegramable channel add`, `telegramable agent add`) — see spec 018.
 

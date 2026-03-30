@@ -7,6 +7,7 @@ import { MemoryStore, formatMemoryList } from "../memory";
 import { MemorySync } from "../memory/sync";
 import { ChunkThrottler } from "./chunkThrottler";
 import { ExecutionRegistry, InMemoryExecutionRegistry } from "./executionRegistry";
+import { markdownToTelegramHtml } from "./markdownToHtml";
 import { PermissionBridge } from "./permissionBridge";
 import { Router } from "./router";
 
@@ -465,7 +466,7 @@ export class ChannelHub {
     if (text) {
       const chunks = splitMessage(text);
       for (const chunk of chunks) {
-        await adapter.sendMessage(event.chatId, chunk);
+        await adapter.sendMessage(event.chatId, markdownToTelegramHtml(chunk));
       }
     }
   }
@@ -552,7 +553,7 @@ export class ChannelHub {
       const overflow = draft.text.slice(splitAt).replace(/^\n+/, "");
 
       // Finalize the current message with the first chunk
-      await adapter.editMessage(event.chatId, draft.messageId, escapeHtml(finalized)).catch(() => {});
+      await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
 
       // Reset draft for the overflow — next update will create a new message
       draft.text = overflow;
@@ -564,7 +565,7 @@ export class ChannelHub {
     const shouldUpdate = !draft.messageId || draft.text.length % 500 < text.length;
 
     if (shouldUpdate && adapter.editMessage && draft.messageId) {
-      await adapter.editMessage(event.chatId, draft.messageId, escapeHtml(draft.text)).catch(() => {
+      await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(draft.text)).catch(() => {
         // Edit might fail if message was deleted; non-critical
       });
     } else if (!draft.messageId && draft.text.trim()) {
@@ -572,7 +573,7 @@ export class ChannelHub {
       if (adapter.sendMessageWithMarkup) {
         const messageId = await adapter.sendMessageWithMarkup(
           event.chatId,
-          escapeHtml(draft.text.length <= TELEGRAM_MSG_LIMIT ? draft.text : draft.text.slice(0, TELEGRAM_MSG_LIMIT)),
+          markdownToTelegramHtml(draft.text.length <= TELEGRAM_MSG_LIMIT ? draft.text : draft.text.slice(0, TELEGRAM_MSG_LIMIT)),
           undefined,
           { threadId: topicId }
         );
@@ -597,15 +598,15 @@ export class ChannelHub {
 
     if (draft.messageId && adapter.editMessage) {
       // Edit existing message with first chunk
-      await adapter.editMessage(chatId, draft.messageId, escapeHtml(chunks[0])).catch(() => {});
+      await adapter.editMessage(chatId, draft.messageId, markdownToTelegramHtml(chunks[0])).catch(() => {});
       // Send remaining chunks as new messages
       for (let i = 1; i < chunks.length; i++) {
-        await adapter.sendMessage(chatId, escapeHtml(chunks[i]));
+        await adapter.sendMessage(chatId, markdownToTelegramHtml(chunks[i]));
       }
     } else if (chunks.length > 0) {
       // No existing message — send all chunks
       for (const chunk of chunks) {
-        await adapter.sendMessage(chatId, escapeHtml(chunk));
+        await adapter.sendMessage(chatId, markdownToTelegramHtml(chunk));
       }
     }
 
