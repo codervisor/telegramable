@@ -587,7 +587,7 @@ export class ChannelHub {
   }
 
   /** Delay before tool activity becomes visible. Short turns never send a status message. */
-  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 5_000;
+  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 3_000;
 
   private async forwardToolActivity(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
     const toolName = event.payload?.toolName || "unknown";
