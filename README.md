@@ -61,44 +61,25 @@ Supported runtimes: `cli`, `session-claude`, `session-claude-sdk`, `session-gemi
 
 ### Long-Term Memory
 
-Telegramable can persist facts across sessions using Telegram itself as the storage backend. The agent automatically extracts key facts from conversations and stores them as a pinned JSON message in a dedicated Telegram chat.
-
-| Variable          | Default | Description                                    |
-| ----------------- | ------- | ---------------------------------------------- |
-| MEMORY_CHAT_ID    | -       | Telegram chat ID for memory storage (enables memory) |
-| MEMORY_TOPIC_ID   | -       | Forum topic ID within the chat (optional)      |
-
-**Setup:**
-
-1. Create a private channel or group in Telegram for memory storage.
-2. Add your bot to that channel/group as an admin.
-3. Get the chat ID (see [Finding Telegram Chat IDs](#finding-telegram-chat-ids) below).
-4. Set `MEMORY_CHAT_ID` in your `.env`. If using a forum group, also set `MEMORY_TOPIC_ID`.
-
-On startup the bot loads the pinned memory snapshot and syncs changes back after each conversation.
-
-**Extraction LLM** — automatically picks up facts from conversations. Two options:
-
-| Variable            | Description                                              |
-| ------------------- | -------------------------------------------------------- |
-| ANTHROPIC_API_KEY   | Uses Anthropic API (defaults to `claude-haiku-4-5-20251001`) |
-| MEMORY_LLM_BASE_URL | OpenAI-compatible endpoint (OpenRouter, local LLMs, etc.) |
-| MEMORY_LLM_API_KEY  | API key for the OpenAI-compatible endpoint               |
-| MEMORY_LLM_MODEL    | Model name (default: `gpt-4o-mini` for OpenAI, `claude-haiku-4-5-20251001` for Anthropic) |
-
-Use **Option 1** (`ANTHROPIC_API_KEY`) if you have an Anthropic API account. Use **Option 2** (`MEMORY_LLM_BASE_URL` + `MEMORY_LLM_API_KEY`) for any OpenAI-compatible provider — e.g., OpenRouter, Ollama, vLLM, or Together AI.
-
-**Example — OpenRouter (recommended if you only have Claude Pro/Max):**
+Persist facts across sessions using a pinned Telegram message as storage. Set `MEMORY_CHAT_ID` to enable:
 
 ```bash
-MEMORY_LLM_BASE_URL=https://openrouter.ai/api/v1
-MEMORY_LLM_API_KEY=sk-or-v1-your-key
-MEMORY_LLM_MODEL=anthropic/claude-haiku-4-5-20251001
+MEMORY_CHAT_ID=-1001234567890   # dedicated channel/group for memory
+MEMORY_TOPIC_ID=2               # optional, for forum groups
 ```
 
-Sign up at [openrouter.ai](https://openrouter.ai), create an API key, and pick any cheap model for extraction (Haiku, Gemini Flash, etc.).
+Create a private channel or group, add your bot as admin, and grab the chat ID (see [Finding Telegram Chat IDs](#finding-telegram-chat-ids)).
 
-**User commands:**
+**Automatic extraction** uses a cheap LLM to pick up facts from conversations. It auto-detects from env vars you likely already have:
+
+| If you have...                          | Extraction works via        |
+| --------------------------------------- | --------------------------- |
+| `ANTHROPIC_API_KEY` (set for SDK runtime) | Anthropic Haiku (no extra config) |
+| `OPENAI_BASE_URL` + `OPENAI_API_KEY`   | Any OpenAI-compatible API   |
+
+For OpenRouter: set `OPENAI_BASE_URL=https://openrouter.ai/api/v1` and `OPENAI_API_KEY=sk-or-v1-...`. Override the model with `MEMORY_LLM_MODEL` if needed (defaults to Haiku / gpt-4o-mini).
+
+**Commands:**
 
 | Command                    | Description             |
 | -------------------------- | ----------------------- |

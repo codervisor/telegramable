@@ -58,7 +58,7 @@ export async function startDaemon(): Promise<void> {
         memoryExtractor = new MemoryExtractor(config.memory.extraction, logger);
         logger.info("Memory extraction enabled.", { provider: config.memory.extraction.provider, model: config.memory.extraction.model });
       } else {
-        logger.info("No extraction LLM configured — automatic memory extraction disabled. Set ANTHROPIC_API_KEY or MEMORY_LLM_BASE_URL + MEMORY_LLM_API_KEY to enable.");
+        logger.info("No extraction LLM configured — set ANTHROPIC_API_KEY or OPENAI_BASE_URL + OPENAI_API_KEY to enable automatic memory extraction.");
       }
 
       const snapshot = await memorySync.load();
