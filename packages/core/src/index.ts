@@ -11,6 +11,7 @@ import { MemoryStore } from "./memory";
 import { MemoryExtractor } from "./memory/extractor";
 import { MemorySync } from "./memory/sync";
 import { createAgentRegistry } from "./runtime";
+import { FileSessionStore } from "./runtime/session/fileSessionStore";
 
 export { loadConfig, loadEnv } from "./config";
 
@@ -52,12 +53,24 @@ export async function startDaemon(): Promise<void> {
         const memBot = new Bot(telegramChannel.token);
         await memBot.init();
 
-        // Resolve @username to numeric chat ID if needed
+        // Resolve @username to numeric chat ID if needed.
+        // Cache resolved IDs so private chats work after initial resolution.
         const rawChatId = config.memory.chatId;
         if (rawChatId.startsWith("@") || !/^-?\d+$/.test(rawChatId)) {
-          const chat = await memBot.api.getChat(rawChatId);
-          config.memory.chatId = String(chat.id);
-          logger.info("Resolved memory chat.", { from: rawChatId, to: chat.id });
+          const cacheStore = config.dataDir
+            ? new FileSessionStore(config.dataDir, "memory-chat-ids.json", logger)
+            : undefined;
+          const cached = cacheStore?.get(rawChatId);
+
+          if (cached) {
+            config.memory.chatId = cached;
+            logger.info("Using cached memory chat ID.", { from: rawChatId, to: cached });
+          } else {
+            const chat = await memBot.api.getChat(rawChatId);
+            config.memory.chatId = String(chat.id);
+            cacheStore?.set(rawChatId, String(chat.id));
+            logger.info("Resolved memory chat.", { from: rawChatId, to: chat.id });
+          }
         }
 
         memorySync = new MemorySync(memBot, config.memory, logger);
