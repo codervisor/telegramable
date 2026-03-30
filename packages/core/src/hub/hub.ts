@@ -119,6 +119,46 @@ const PERMISSION_CALLBACK_PREFIX = "perm:";
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** Format a human-readable tool activity description (like Claude Code mobile). */
+const formatToolDescription = (toolName: string, toolInput?: Record<string, unknown>): string => {
+  if (!toolInput) return `<b>${escapeHtml(toolName)}</b>`;
+
+  const short = (val: unknown, max = 40): string => {
+    const str = typeof val === "string" ? val : JSON.stringify(val);
+    return escapeHtml(truncate(str, max));
+  };
+
+  // Extract a meaningful detail from the tool input based on common patterns
+  const filePath = toolInput.file_path ?? toolInput.path ?? toolInput.filePath;
+  const command = toolInput.command;
+  const pattern = toolInput.pattern ?? toolInput.query ?? toolInput.regex;
+  const prompt = toolInput.prompt ?? toolInput.description ?? toolInput.message;
+
+  switch (toolName.toLowerCase()) {
+    case "read":
+      return filePath ? `Reading <code>${short(filePath)}</code>` : "<b>Read</b>";
+    case "write":
+      return filePath ? `Writing <code>${short(filePath)}</code>` : "<b>Write</b>";
+    case "edit":
+      return filePath ? `Editing <code>${short(filePath)}</code>` : "<b>Edit</b>";
+    case "glob":
+      return pattern ? `Finding files <code>${short(pattern)}</code>` : "Finding files";
+    case "grep":
+      return pattern ? `Searching for <code>${short(pattern)}</code>` : "Searching code";
+    case "bash":
+      return command ? `Running <code>${short(command, 60)}</code>` : "Running command";
+    case "agent":
+      return prompt ? `Agent: ${short(prompt, 50)}` : "Running sub-agent";
+    default: {
+      // For unknown tools, show the tool name with the first string input value
+      const firstVal = Object.values(toolInput).find((v) => typeof v === "string");
+      return firstVal
+        ? `<b>${escapeHtml(toolName)}</b> <code>${short(firstVal)}</code>`
+        : `<b>${escapeHtml(toolName)}</b>`;
+    }
+  }
+};
+
 /** Format a tool permission request as an HTML message for Telegram. */
 const formatPermissionRequest = (toolName: string, toolInput: Record<string, unknown>): string => {
   const inputPreview = truncate(JSON.stringify(toolInput, null, 2), 500);
@@ -137,7 +177,7 @@ export class ChannelHub {
   private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
   private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
-  private readonly toolActivityMessages = new Map<string, { tools: string[]; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean }>(); // tool activity tracking
+  private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private unsubscribeEvents?: () => void;
 
@@ -547,10 +587,11 @@ export class ChannelHub {
   }
 
   /** Delay before tool activity becomes visible. Short turns never send a status message. */
-  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 3_000;
+  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 5_000;
 
   private async forwardToolActivity(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
     const toolName = event.payload?.toolName || "unknown";
+    const toolInput = event.payload?.toolInput;
     const activityKey = `${event.channelId}:${event.chatId}:${event.executionId}`;
 
     let activity = this.toolActivityMessages.get(activityKey);
@@ -559,7 +600,7 @@ export class ChannelHub {
       this.toolActivityMessages.set(activityKey, activity);
     }
 
-    activity.tools.push(toolName);
+    activity.tools.push({ name: toolName, input: toolInput });
 
     if (activity.promoted) {
       // Already visible — edit in-place immediately
@@ -577,11 +618,12 @@ export class ChannelHub {
     // Otherwise: timer already running, tools are being accumulated — nothing to do yet
   }
 
-  private async sendOrEditToolActivity(adapter: IMAdapter, chatId: string, activity: { tools: string[]; messageId?: number; promoted: boolean }, topicId?: number): Promise<void> {
-    const displayTools = activity.tools.slice(-6);
-    const prefix = activity.tools.length > 6 ? "… " : "";
-    const toolList = displayTools.map((t) => `<code>${escapeHtml(t)}</code>`).join(" → ");
-    const statusMsg = `⚙️ ${prefix}${toolList}`;
+  private async sendOrEditToolActivity(adapter: IMAdapter, chatId: string, activity: { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promoted: boolean }, topicId?: number): Promise<void> {
+    const current = activity.tools[activity.tools.length - 1];
+    const description = formatToolDescription(current.name, current.input);
+    const statusMsg = activity.tools.length > 1
+      ? `⚙️ ${description} <i>(${activity.tools.length} steps)</i>`
+      : `⚙️ ${description}`;
 
     if (activity.messageId && adapter.editMessage) {
       await adapter.editMessage(chatId, activity.messageId, statusMsg).catch(() => {

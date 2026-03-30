@@ -223,7 +223,7 @@ export class SdkClaudeSession implements AgentSession {
 
     switch (message.type) {
       case "assistant": {
-        // Extract text from assistant message content blocks
+        // Extract text and tool-use from assistant message content blocks
         if (message.message?.content) {
           for (const block of message.message.content) {
             if ("text" in block && typeof block.text === "string") {
@@ -233,10 +233,11 @@ export class SdkClaudeSession implements AgentSession {
                 payload: { text: block.text }
               });
             } else if ("name" in block && typeof block.name === "string") {
+              const toolInput = "input" in block && typeof block.input === "object" ? block.input as Record<string, unknown> : undefined;
               eventBus.emit({
                 ...base,
                 type: "tool-use",
-                payload: { toolName: block.name }
+                payload: { toolName: block.name, toolInput }
               });
             }
           }
@@ -246,19 +247,6 @@ export class SdkClaudeSession implements AgentSession {
 
       case "stream_event": {
         const event = message.event;
-
-        // Detect tool-use blocks starting via stream (fires before assistant message is complete)
-        if (event.type === "content_block_start" && "content_block" in event) {
-          const block = event.content_block as { type: string; name?: string; id?: string };
-          if (block.type === "tool_use" && block.name) {
-            eventBus.emit({
-              ...base,
-              type: "tool-use",
-              payload: { toolName: block.name }
-            });
-          }
-        }
-
         if (event.type === "content_block_delta" && "delta" in event) {
           const delta = event.delta as { type: string; text?: string };
           if (delta.type === "text_delta" && delta.text) {
