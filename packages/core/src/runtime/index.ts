@@ -3,6 +3,7 @@ import { AgentRegistry } from "../hub/agentRegistry";
 import { Logger } from "../logging";
 import { MemoryStore, buildMemoryPrompt } from "../memory";
 import { MemoryExtractor } from "../memory/extractor";
+import { createMemoryMcpServer } from "../memory/mcpServer";
 import { MemorySync } from "../memory/sync";
 import { CliRuntime } from "./cliRuntime";
 import { ClaudeSession } from "./session/claudeSession";
@@ -23,8 +24,22 @@ export interface CreateRuntimeOptions {
 
 export const createRuntime = (agent: AgentConfig, logger: Logger, options?: CreateRuntimeOptions): Runtime => {
   const { dataDir, memoryStore, memorySync, memoryExtractor } = options ?? {};
+
+  // Agent-driven memory via MCP is only available for the SDK runtime
+  const canUseAgentDrivenMemory = agent.runtime === "session-claude-sdk" && !!(memoryStore && memorySync);
+
   const getSystemPromptSuffix = memoryStore
-    ? () => buildMemoryPrompt(memoryStore.all())
+    ? () => buildMemoryPrompt(memoryStore.all(), canUseAgentDrivenMemory)
+    : undefined;
+
+  const memoryMcpServers = canUseAgentDrivenMemory
+    ? {
+        memory: {
+          type: "sdk" as const,
+          name: "memory",
+          instance: createMemoryMcpServer({ memoryStore, memorySync: memorySync!, logger }),
+        },
+      }
     : undefined;
 
   if (!agent.runtime || agent.runtime === "cli") {
@@ -49,6 +64,7 @@ export const createRuntime = (agent: AgentConfig, logger: Logger, options?: Crea
             maxBudgetUsd: agent.maxBudgetUsd,
             cwd: agent.workingDir,
             getSystemPromptSuffix,
+            mcpServers: memoryMcpServers,
           }, logger);
         case "session-gemini":
           return new GeminiSession(channelId, chatId, agent);
@@ -60,11 +76,14 @@ export const createRuntime = (agent: AgentConfig, logger: Logger, options?: Crea
     }
   });
 
+  // When agent-driven memory is active (MCP server), skip post-hoc extraction
+  const usePostHocExtraction = !memoryMcpServers;
+
   return new SessionRuntime(agent, sessionManager, logger, {
     fileStore,
     memoryStore,
     memorySync,
-    memoryExtractor,
+    memoryExtractor: usePostHocExtraction ? memoryExtractor : undefined,
   });
 };
 

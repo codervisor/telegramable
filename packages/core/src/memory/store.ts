@@ -90,27 +90,52 @@ export class MemoryStore {
 
 const TAG_ORDER: MemoryTag[] = ["project", "decision", "context", "personal", "preference"];
 
+const MEMORY_TOOL_INSTRUCTIONS = `
+
+## Memory
+
+You have memory tools (save_memory, update_memory, delete_memory, list_memories) to remember important facts about the user across conversations.
+
+When to save a memory:
+- The user shares a project they're working on, a preference, a personal detail, or a decision
+- You learn something with long-term value that would be useful in future conversations
+
+When NOT to save:
+- Transient questions (weather, translations, one-off lookups)
+- Information already in your memories
+- Trivial or obvious facts
+
+Use update_memory when new info refines or supersedes an existing memory. Use delete_memory for outdated facts. You don't need to announce or ask permission — just save naturally as part of the conversation.`;
+
 /** Build a human-readable system prompt section from memory facts. */
-export const buildMemoryPrompt = (facts: MemoryFact[]): string => {
-  if (facts.length === 0) return "";
+export const buildMemoryPrompt = (facts: MemoryFact[], agentDriven?: boolean): string => {
+  const parts: string[] = [];
 
-  const grouped = new Map<MemoryTag, MemoryFact[]>();
-  for (const fact of facts) {
-    const list = grouped.get(fact.tag) || [];
-    list.push(fact);
-    grouped.set(fact.tag, list);
+  if (agentDriven) {
+    parts.push(MEMORY_TOOL_INSTRUCTIONS);
   }
 
-  const sections: string[] = [];
-  for (const tag of TAG_ORDER) {
-    const list = grouped.get(tag);
-    if (!list?.length) continue;
-    const heading = tag.charAt(0).toUpperCase() + tag.slice(1);
-    const bullets = list.map((f) => `- ${f.text}`).join("\n");
-    sections.push(`## ${heading}\n${bullets}`);
+  if (facts.length > 0) {
+    const grouped = new Map<MemoryTag, MemoryFact[]>();
+    for (const fact of facts) {
+      const list = grouped.get(fact.tag) || [];
+      list.push(fact);
+      grouped.set(fact.tag, list);
+    }
+
+    const sections: string[] = [];
+    for (const tag of TAG_ORDER) {
+      const list = grouped.get(tag);
+      if (!list?.length) continue;
+      const heading = tag.charAt(0).toUpperCase() + tag.slice(1);
+      const bullets = list.map((f) => `- [${f.id}] ${f.text}`).join("\n");
+      sections.push(`## ${heading}\n${bullets}`);
+    }
+
+    parts.push(`\n\nYou know the following about the user:\n\n${sections.join("\n\n")}`);
   }
 
-  return `\n\nYou know the following about the user:\n\n${sections.join("\n\n")}`;
+  return parts.join("");
 };
 
 /** Format facts for display in Telegram (HTML). */

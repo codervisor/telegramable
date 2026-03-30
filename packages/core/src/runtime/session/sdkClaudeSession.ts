@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { query as sdkQuery, SDKMessage, SDKUserMessage, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import type { query as sdkQuery, SDKMessage, SDKUserMessage, PermissionResult, McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { AgentConfig } from "../../config";
 import { EventBus } from "../../events/eventBus";
 import { Logger } from "../../logging";
@@ -13,6 +13,8 @@ export interface SdkClaudeSessionOptions {
   cwd?: string;
   /** Additional system prompt section injected at query time (e.g. memory facts). */
   getSystemPromptSuffix?: () => string;
+  /** MCP servers to make available to the agent (e.g. memory tools). */
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 /**
@@ -152,6 +154,7 @@ export class SdkClaudeSession implements AgentSession {
           model: this.options.model || this.config.env?.CLAUDE_MODEL,
           systemPrompt: (this.options.systemPrompt || "") + (this.options.getSystemPromptSuffix?.() || ""),
           allowedTools: this.options.allowedTools,
+          mcpServers: this.options.mcpServers,
           maxBudgetUsd: this.options.maxBudgetUsd,
           cwd: this.options.cwd || this.config.workingDir,
           resume: this.sdkSessionId,
