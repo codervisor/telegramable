@@ -137,7 +137,7 @@ export class ChannelHub {
   private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
   private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
-  private readonly toolActivityMessages = new Map<string, { tools: string[]; messageId?: number }>(); // tool activity tracking
+  private readonly toolActivityMessages = new Map<string, { tools: string[]; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private unsubscribeEvents?: () => void;
 
@@ -192,6 +192,9 @@ export class ChannelHub {
       throttler.destroy();
     }
     this.chunkThrottlers.clear();
+    for (const activity of this.toolActivityMessages.values()) {
+      if (activity.promotionTimer) clearTimeout(activity.promotionTimer);
+    }
     this.toolActivityMessages.clear();
     this.eventQueues.clear();
 
@@ -543,43 +546,62 @@ export class ChannelHub {
     });
   }
 
+  /** Delay before tool activity becomes visible. Short turns never send a status message. */
+  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 3_000;
+
   private async forwardToolActivity(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
     const toolName = event.payload?.toolName || "unknown";
     const activityKey = `${event.channelId}:${event.chatId}:${event.executionId}`;
 
     let activity = this.toolActivityMessages.get(activityKey);
     if (!activity) {
-      activity = { tools: [] };
+      activity = { tools: [], promoted: false };
       this.toolActivityMessages.set(activityKey, activity);
     }
 
     activity.tools.push(toolName);
 
-    // Format compact tool list — show last few tools to keep message short
+    if (activity.promoted) {
+      // Already visible — edit in-place immediately
+      await this.sendOrEditToolActivity(adapter, event.chatId, activity, topicId);
+    } else if (!activity.promotionTimer) {
+      // First tool event — start the promotion timer
+      activity.promotionTimer = setTimeout(() => {
+        const current = this.toolActivityMessages.get(activityKey);
+        if (!current) return; // cleared before timer fired
+        current.promoted = true;
+        current.promotionTimer = undefined;
+        void this.sendOrEditToolActivity(adapter, event.chatId, current, topicId);
+      }, ChannelHub.TOOL_ACTIVITY_PROMOTION_MS);
+    }
+    // Otherwise: timer already running, tools are being accumulated — nothing to do yet
+  }
+
+  private async sendOrEditToolActivity(adapter: IMAdapter, chatId: string, activity: { tools: string[]; messageId?: number; promoted: boolean }, topicId?: number): Promise<void> {
     const displayTools = activity.tools.slice(-6);
     const prefix = activity.tools.length > 6 ? "… " : "";
     const toolList = displayTools.map((t) => `<code>${escapeHtml(t)}</code>`).join(" → ");
     const statusMsg = `⚙️ ${prefix}${toolList}`;
 
     if (activity.messageId && adapter.editMessage) {
-      await adapter.editMessage(event.chatId, activity.messageId, statusMsg).catch(() => {
+      await adapter.editMessage(chatId, activity.messageId, statusMsg).catch(() => {
         // Message may have been deleted — non-critical
       });
     } else if (adapter.sendMessageWithMarkup) {
-      const messageId = await adapter.sendMessageWithMarkup(
-        event.chatId,
-        statusMsg,
-        undefined,
-        { threadId: topicId }
-      );
+      const messageId = await adapter.sendMessageWithMarkup(chatId, statusMsg, undefined, { threadId: topicId });
       activity.messageId = messageId;
     } else {
-      await adapter.sendMessage(event.chatId, statusMsg);
+      await adapter.sendMessage(chatId, statusMsg);
     }
   }
 
   private clearToolActivity(channelId: string, chatId: string, executionId: string): void {
-    this.toolActivityMessages.delete(`${channelId}:${chatId}:${executionId}`);
+    const key = `${channelId}:${chatId}:${executionId}`;
+    const activity = this.toolActivityMessages.get(key);
+    if (activity?.promotionTimer) {
+      clearTimeout(activity.promotionTimer);
+    }
+    this.toolActivityMessages.delete(key);
   }
 
   private async forwardStreamText(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
