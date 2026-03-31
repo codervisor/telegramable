@@ -25,14 +25,15 @@ export interface CreateRuntimeOptions {
 export const createRuntime = (agent: AgentConfig, logger: Logger, options?: CreateRuntimeOptions): Runtime => {
   const { dataDir, memoryStore, memorySync, memoryExtractor } = options ?? {};
 
-  // Agent-driven memory via MCP is only available for the SDK runtime
-  const canUseAgentDrivenMemory = agent.runtime === "session-claude-sdk" && !!(memoryStore && memorySync);
+  // Agent-driven memory via MCP is available for both SDK and CLI runtimes
+  const canUseAgentDrivenMemory = (agent.runtime === "session-claude-sdk" || !agent.runtime || agent.runtime === "cli")
+    && !!(memoryStore && memorySync);
 
   const getSystemPromptSuffix = memoryStore
     ? () => buildMemoryPrompt(memoryStore.all(), canUseAgentDrivenMemory)
     : undefined;
 
-  const memoryMcpServers = canUseAgentDrivenMemory
+  const memoryMcpServers = (agent.runtime === "session-claude-sdk" && canUseAgentDrivenMemory)
     ? {
         memory: {
           type: "sdk" as const,
@@ -43,7 +44,14 @@ export const createRuntime = (agent: AgentConfig, logger: Logger, options?: Crea
     : undefined;
 
   if (!agent.runtime || agent.runtime === "cli") {
-    return new CliRuntime(agent, logger, { dataDir, getSystemPromptSuffix, memoryStore, memorySync, memoryExtractor });
+    return new CliRuntime(agent, logger, {
+      dataDir,
+      getSystemPromptSuffix,
+      memoryStore,
+      memorySync,
+      memoryExtractor,
+      useAgentDrivenMemory: canUseAgentDrivenMemory,
+    });
   }
 
   const fileStore = dataDir ? new FileSessionStore(dataDir, `${agent.runtime}-sessions.json`, logger) : undefined;

@@ -1,11 +1,14 @@
 import { randomUUID } from "crypto";
 import { spawn } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, mkdirSync, unlinkSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { AgentConfig } from "../config";
 import { EventBus } from "../events/eventBus";
 import { IMMessage } from "../gateway/types";
 import { Logger } from "../logging";
 import { MemoryStore } from "../memory";
+import type { MemorySnapshot } from "../memory";
 import { MemoryExtractor } from "../memory/extractor";
 import { MemorySync } from "../memory/sync";
 import { Runtime } from "./types";
@@ -18,6 +21,8 @@ export interface CliRuntimeOptions {
   memoryStore?: MemoryStore;
   memorySync?: MemorySync;
   memoryExtractor?: MemoryExtractor;
+  /** When true, attach the memory MCP stdio server to the CLI via --mcp-config. */
+  useAgentDrivenMemory?: boolean;
 }
 
 export class CliRuntime implements Runtime {
@@ -28,6 +33,10 @@ export class CliRuntime implements Runtime {
   private readonly memoryStore?: MemoryStore;
   private readonly memorySync?: MemorySync;
   private readonly memoryExtractor?: MemoryExtractor;
+  private readonly useAgentDrivenMemory: boolean;
+
+  /** Resolve the path to the compiled memoryMcpStdio.js once. */
+  private memoryMcpStdioPath?: string;
 
   constructor(private readonly config: AgentConfig, private readonly logger: Logger, options?: CliRuntimeOptions) {
     if (options?.dataDir) {
@@ -37,6 +46,7 @@ export class CliRuntime implements Runtime {
     this.memoryStore = options?.memoryStore;
     this.memorySync = options?.memorySync;
     this.memoryExtractor = options?.memoryExtractor;
+    this.useAgentDrivenMemory = options?.useAgentDrivenMemory ?? false;
   }
 
   /**
@@ -59,6 +69,12 @@ export class CliRuntime implements Runtime {
       args.push("--model", this.config.model);
     }
 
+    // Append the user-configured system prompt (SYSTEM_PROMPT env var)
+    if (this.config.systemPrompt) {
+      args.push("--append-system-prompt", this.config.systemPrompt);
+    }
+
+    // Append memory facts and (optionally) memory tool instructions
     const memorySuffix = this.getSystemPromptSuffix?.() || "";
     if (memorySuffix) {
       args.push("--append-system-prompt", memorySuffix);
@@ -109,6 +125,114 @@ export class CliRuntime implements Runtime {
     return args;
   }
 
+  /** Resolve the path to the compiled memoryMcpStdio.js script. */
+  private resolveMemoryMcpStdioPath(): string {
+    if (this.memoryMcpStdioPath) return this.memoryMcpStdioPath;
+    // The script is compiled alongside this file in the core package dist
+    this.memoryMcpStdioPath = join(__dirname, "..", "memory", "memoryMcpStdio.js");
+    return this.memoryMcpStdioPath;
+  }
+
+  /**
+   * Write a temporary MCP config file and memory state file for the CLI subprocess.
+   * Returns paths so they can be cleaned up after execution.
+   */
+  private prepareMcpConfig(executionId: string): { mcpConfigPath: string; stateFilePath: string } | null {
+    if (!this.useAgentDrivenMemory || !this.memoryStore) return null;
+
+    const stdioScript = this.resolveMemoryMcpStdioPath();
+    if (!existsSync(stdioScript)) {
+      this.logger.warn("Memory MCP stdio script not found, skipping agent-driven memory for CLI.", { path: stdioScript });
+      return null;
+    }
+
+    const dir = join(tmpdir(), "telegramable-mcp");
+    mkdirSync(dir, { recursive: true });
+
+    const stateFilePath = join(dir, `memory-${executionId}.json`);
+    const mcpConfigPath = join(dir, `mcp-${executionId}.json`);
+
+    // Write current memory state
+    writeFileSync(stateFilePath, JSON.stringify(this.memoryStore.snapshot(), null, 2), "utf-8");
+
+    // Write MCP config pointing to the stdio script
+    const mcpConfig = {
+      mcpServers: {
+        memory: {
+          command: "node",
+          args: [stdioScript, stateFilePath],
+        },
+      },
+    };
+    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
+
+    this.logger.debug("Prepared MCP config for CLI memory tools.", { mcpConfigPath, stateFilePath, executionId });
+    return { mcpConfigPath, stateFilePath };
+  }
+
+  /** Read back memory state from the temp file and sync any changes to Telegram. */
+  private async syncMemoryFromFile(stateFilePath: string): Promise<void> {
+    if (!this.memoryStore || !this.memorySync) return;
+
+    try {
+      const raw = readFileSync(stateFilePath, "utf-8");
+      const snapshot: MemorySnapshot = JSON.parse(raw);
+      if (!snapshot.v || !Array.isArray(snapshot.facts)) return;
+
+      // Diff: compare snapshot facts with current store
+      const currentFacts = this.memoryStore.all();
+      const currentIds = new Set(currentFacts.map((f) => f.id));
+      const snapshotIds = new Set(snapshot.facts.map((f) => f.id));
+      const snapshotMap = new Map(snapshot.facts.map((f) => [f.id, f]));
+
+      const changelogParts: string[] = [];
+
+      // Detect added facts
+      for (const fact of snapshot.facts) {
+        if (!currentIds.has(fact.id)) {
+          this.memoryStore.add(fact.tag, fact.text);
+          changelogParts.push(`➕ <code>${fact.id}</code> [${fact.tag}] ${fact.text}`);
+        }
+      }
+
+      // Detect updated facts
+      for (const current of currentFacts) {
+        const updated = snapshotMap.get(current.id);
+        if (updated && updated.text !== current.text) {
+          this.memoryStore.update(current.id, updated.text);
+          changelogParts.push(`✏️ <code>${current.id}</code> → ${updated.text}`);
+        }
+      }
+
+      // Detect removed facts
+      for (const current of currentFacts) {
+        if (!snapshotIds.has(current.id)) {
+          this.memoryStore.remove(current.id);
+          changelogParts.push(`🗑️ <code>${current.id}</code> ${current.text}`);
+        }
+      }
+
+      if (changelogParts.length === 0) return;
+
+      await this.memorySync.save(this.memoryStore.snapshot());
+      await this.memorySync.sendChangelog(
+        `<b>🧠 Memory updated</b>\n\n${changelogParts.join("\n")}`,
+      );
+
+      this.logger.info("Memory synced from CLI MCP state file.", { changes: changelogParts.length });
+    } catch (err) {
+      this.logger.warn("Failed to sync memory from CLI MCP state file.", {
+        reason: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  }
+
+  /** Clean up temporary MCP files. */
+  private cleanupMcpFiles(mcpConfigPath: string, stateFilePath: string): void {
+    try { unlinkSync(mcpConfigPath); } catch { /* ignore */ }
+    try { unlinkSync(stateFilePath); } catch { /* ignore */ }
+  }
+
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
     if (!this.config.command) {
       throw new Error("Agent command is required for cli runtime.");
@@ -123,6 +247,9 @@ export class CliRuntime implements Runtime {
       payload: { agentName: this.config.name }
     });
 
+    // Prepare MCP config for agent-driven memory (if enabled)
+    const mcpFiles = this.prepareMcpConfig(executionId);
+
     return new Promise((resolve, reject) => {
       const sessionKey = `${message.channelId}::${message.chatId}`;
       const existingSessionId = this.sessions.get(sessionKey) || this.fileStore?.get(sessionKey);
@@ -135,6 +262,11 @@ export class CliRuntime implements Runtime {
         ...(this.config.args || []),
         ...this.buildConfigArgs()
       ];
+
+      // Attach memory MCP server if prepared
+      if (mcpFiles) {
+        args.push("--mcp-config", mcpFiles.mcpConfigPath);
+      }
 
       if (existingSessionId) {
         args.push("--resume", existingSessionId);
@@ -229,6 +361,7 @@ export class CliRuntime implements Runtime {
       child.on("error", (error: NodeJS.ErrnoException) => {
         clearTimeout(timeout);
         clearInterval(heartbeat);
+        if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
         let reason = error.message;
         if (error.code === "ENOENT") {
           reason = this.config.workingDir && !existsSync(this.config.workingDir)
@@ -302,8 +435,12 @@ export class CliRuntime implements Runtime {
           payload: { code: code ?? null, response: response || undefined }
         });
 
-        // Extract memories async — don't block
-        if (response && this.memoryExtractor && this.memoryStore && this.memorySync) {
+        // Sync memories from the MCP state file (agent-driven), or fall back to post-hoc extraction
+        if (mcpFiles && this.memoryStore && this.memorySync) {
+          void this.syncMemoryFromFile(mcpFiles.stateFilePath).finally(() => {
+            this.cleanupMcpFiles(mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
+          });
+        } else if (response && this.memoryExtractor && this.memoryStore && this.memorySync) {
           void this.extractMemory(message.text, response);
         }
 
