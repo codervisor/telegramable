@@ -55,6 +55,8 @@ const splitMessage = (text: string, max: number = TELEGRAM_MSG_LIMIT): string[] 
 };
 
 type BuiltinCommand =
+  | { type: "start" }
+  | { type: "help" }
   | { type: "status"; executionId: string }
   | { type: "logs"; executionId: string }
   | { type: "list" }
@@ -69,6 +71,14 @@ type BuiltinCommand =
 
 export const parseBuiltinCommand = (text: string): BuiltinCommand => {
   const trimmed = text.trim();
+
+  if (/^\/start\s*$/i.test(trimmed)) {
+    return { type: "start" };
+  }
+
+  if (/^\/help\s*$/i.test(trimmed)) {
+    return { type: "help" };
+  }
 
   const statusMatch = trimmed.match(/^\/status\s+([^\s]+)\s*$/i);
   if (statusMatch?.[1]) {
@@ -962,6 +972,35 @@ export class ChannelHub {
     message: IMMessage,
     command: Exclude<BuiltinCommand, null>
   ): Promise<void> {
+    if (command.type === "start") {
+      const lines = [
+        "👋 <b>Welcome!</b> I'm your AI assistant on Telegram.",
+        "",
+        "Just send me a message and I'll respond. Use /help to see available commands.",
+      ];
+      await adapter.sendMessage(message.chatId, lines.join("\n"));
+      return;
+    }
+
+    if (command.type === "help") {
+      const lines = [
+        "<b>Available commands:</b>",
+        "",
+        "/memory — View and manage stored memories",
+        "/memory search &lt;query&gt; — Search memories",
+        "/memory edit &lt;id&gt; &lt;text&gt; — Update a memory",
+        "/memory delete &lt;id&gt; — Remove a memory",
+        "/memory export — Export memories as JSON",
+        "/memory clear — Clear all memories",
+        "/list — List recent executions",
+        "/status &lt;id&gt; — Check execution status",
+        "/logs &lt;id&gt; — View execution logs",
+        "/help — Show this message",
+      ];
+      await adapter.sendMessage(message.chatId, lines.join("\n"));
+      return;
+    }
+
     // Memory commands
     if (command.type === "memory") {
       if (!this.memoryStore) {

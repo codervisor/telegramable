@@ -106,6 +106,9 @@ export class TelegramAdapter implements IMAdapter {
       this.logger.warn("Telegram bot error.", { channelId: this.id, message: err.message });
     });
 
+    // Register command menu so users see shortcuts when typing "/"
+    await this.registerCommands();
+
     if (polling) {
       // Start long-polling (non-blocking)
       this.bot.start({
@@ -224,6 +227,25 @@ export class TelegramAdapter implements IMAdapter {
       throw new Error("Telegram bot not started.");
     }
     await this.bot.api.closeForumTopic(Number(chatId), topicId);
+  }
+
+  /** Register bot commands with Telegram so users see the "/" shortcut menu. */
+  private async registerCommands(): Promise<void> {
+    if (!this.bot) return;
+    try {
+      await this.bot.api.setMyCommands([
+        { command: "start", description: "Welcome message and quick start guide" },
+        { command: "help", description: "Show available commands" },
+        { command: "memory", description: "View and manage stored memories" },
+        { command: "list", description: "List recent executions" },
+      ]);
+      this.logger.debug("Telegram bot commands registered.", { channelId: this.id });
+    } catch (err) {
+      this.logger.warn("Failed to register Telegram bot commands.", {
+        channelId: this.id,
+        reason: err instanceof Error ? err.message : "unknown",
+      });
+    }
   }
 
   async stop(): Promise<void> {

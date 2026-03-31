@@ -13,7 +13,8 @@ test("parseBuiltinCommand parses status/logs/list and ignores unknown", () => {
   assert.deepEqual(parseBuiltinCommand("/status abc"), { type: "status", executionId: "abc" });
   assert.deepEqual(parseBuiltinCommand("/logs ABC-1"), { type: "logs", executionId: "ABC-1" });
   assert.deepEqual(parseBuiltinCommand(" /LiSt  "), { type: "list" });
-  assert.equal(parseBuiltinCommand("/help"), null);
+  assert.deepEqual(parseBuiltinCommand("/start"), { type: "start" });
+  assert.deepEqual(parseBuiltinCommand("/help"), { type: "help" });
   assert.equal(parseBuiltinCommand("deploy now"), null);
 });
 
