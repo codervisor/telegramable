@@ -1,9 +1,7 @@
-import { MemoryFact, MemoryTag } from "../memory";
+import { MemoryFact, MemoryTag, TAG_ORDER } from "../memory";
 
 const MEMORY_CALLBACK_PREFIX = "mem:";
 const PAGE_SIZE = 8;
-
-const TAG_ORDER: MemoryTag[] = ["project", "decision", "context", "personal", "preference"];
 
 /** Escape HTML special characters for Telegram HTML parse mode. */
 const escapeHtml = (text: string): string =>
@@ -57,11 +55,11 @@ export function buildMemoryListMarkup(
   // Build inline keyboard
   const keyboard: InlineKeyboard = [];
 
-  // Delete buttons — one row per 4 facts
+  // Delete buttons — one row per 4 facts, encode current page for stable navigation
   for (let i = 0; i < pageFacts.length; i += 4) {
     const row = pageFacts.slice(i, i + 4).map((f) => ({
       text: `🗑 ${f.id}`,
-      callback_data: `${MEMORY_CALLBACK_PREFIX}delete:${f.id}`,
+      callback_data: `${MEMORY_CALLBACK_PREFIX}delete:${f.id}:${safePage}`,
     }));
     keyboard.push(row);
   }

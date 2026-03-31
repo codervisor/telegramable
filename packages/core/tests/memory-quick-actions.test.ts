@@ -77,8 +77,8 @@ test("/memory sends markup message with inline keyboard when adapter supports it
 
   // Check delete buttons exist
   const allButtons = markup.inline_keyboard.flat();
-  assert.ok(allButtons.some((b) => b.callback_data === "mem:delete:f001"), "should have delete button for f001");
-  assert.ok(allButtons.some((b) => b.callback_data === "mem:delete:f002"), "should have delete button for f002");
+  assert.ok(allButtons.some((b) => b.callback_data === "mem:delete:f001:0"), "should have delete button for f001");
+  assert.ok(allButtons.some((b) => b.callback_data === "mem:delete:f002:0"), "should have delete button for f002");
 
   // Check action row
   assert.ok(allButtons.some((b) => b.callback_data === "mem:clear:prompt"), "should have Clear All button");
@@ -98,7 +98,7 @@ test("mem:delete callback removes fact and re-renders list", async () => {
 
   assert.equal(store.all().length, 3);
 
-  await adapter.simulateCallback("chat-1", "mem:delete:f002", 42);
+  await adapter.simulateCallback("chat-1", "mem:delete:f002:0", 42);
   await sleep(30);
 
   assert.equal(store.all().length, 2, "fact should be deleted");
@@ -292,6 +292,54 @@ test("/memory with no facts shows empty state with no delete buttons", async () 
 
   assert.equal(adapter.sentMarkupMessages.length, 1);
   assert.ok(adapter.sentMarkupMessages[0].text.includes("No memories"));
+
+  await hub.stop();
+});
+
+// --- Cache flush ---
+
+test("mem:cache:flush deletes cache entry and edits message", async () => {
+  const adapter = new MockAdapter("telegram");
+  const store = createStoreWithFacts(1);
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const runtime: Runtime = { async execute(): Promise<void> {} };
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const memorySync = { save: async () => {}, load: async () => null, sendChangelog: async () => {} };
+
+  let deletedKey: string | undefined;
+  const stubCacheStore = {
+    get: () => undefined,
+    set: () => {},
+    delete: (key: string) => { deletedKey = key; },
+  };
+
+  const hub = new ChannelHub(
+    [adapter],
+    router,
+    eventBus,
+    logger,
+    undefined,
+    store,
+    memorySync as any,
+    { resolvedChatId: "-1001234567890", rawChatId: "@my_agent_memory", cacheSource: "cached", cacheStore: stubCacheStore as any }
+  );
+  await hub.start();
+
+  await adapter.simulateCallback("chat-1", "mem:cache:flush", 42);
+  await sleep(30);
+
+  // Cache entry should be deleted with the raw chat ID
+  assert.equal(deletedKey, "@my_agent_memory", "should delete cache entry for raw chat ID");
+
+  // Should acknowledge callback
+  assert.equal(adapter.answeredCallbacks.length, 1);
+  assert.ok(adapter.answeredCallbacks[0].text?.includes("flushed"));
+
+  // Should edit message with restart instructions
+  assert.equal(adapter.editedMessages.length, 1);
+  assert.ok(adapter.editedMessages[0].text.includes("Cache flushed"));
+  assert.ok(adapter.editedMessages[0].text.includes("Restart"));
 
   await hub.stop();
 });

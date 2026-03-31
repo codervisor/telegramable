@@ -95,6 +95,8 @@ export class MemoryStore {
 
 const TAG_ORDER: MemoryTag[] = ["project", "decision", "context", "personal", "preference"];
 
+export { TAG_ORDER };
+
 const MEMORY_TOOL_INSTRUCTIONS = `
 
 ## Memory
