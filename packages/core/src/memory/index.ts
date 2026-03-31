@@ -1,4 +1,4 @@
-export { MemoryStore, buildMemoryPrompt, formatMemoryList } from "./store";
+export { MemoryStore, buildMemoryPrompt, formatMemoryList, TAG_ORDER } from "./store";
 export type { MemoryFact, MemoryTag, MemorySnapshot } from "./store";
 export { MemorySync } from "./sync";
 export type { MemoryConfig } from "./sync";

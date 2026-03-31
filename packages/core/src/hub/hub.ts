@@ -448,12 +448,14 @@ export class ChannelHub {
         await ack("Memory not configured.");
         return;
       }
-      const factId = param;
+      // param may be "<factId>" or "<factId>:<page>"
+      const [factId, pageStr] = param.split(":");
+      const page = pageStr ? parseInt(pageStr, 10) || 0 : 0;
       if (this.memoryStore.remove(factId)) {
         await this.memorySync.save(this.memoryStore.snapshot());
         await ack(`Deleted ${factId}`);
-        // Re-render the list in-place
-        const { text, markup } = buildMemoryListMarkup(this.memoryStore.all());
+        // Re-render the list in-place, preserving the current page
+        const { text, markup } = buildMemoryListMarkup(this.memoryStore.all(), page);
         await editMarkup(text, markup);
       } else {
         await ack(`Unknown: ${factId}`);
@@ -521,8 +523,10 @@ export class ChannelHub {
           fileName: "memory.json",
           caption: `${this.memoryStore.all().length} facts exported.`,
         });
+        await ack();
+      } else {
+        await ack("Export not supported on this adapter.");
       }
-      await ack();
       return;
     }
 
@@ -547,15 +551,23 @@ export class ChannelHub {
           await ack("No cache to flush.");
           return;
         }
-        this.memoryChannelInfo.cacheStore.delete(this.memoryChannelInfo.rawChatId);
-        this.logger.info("Memory chat ID cache flushed.", { rawChatId: this.memoryChannelInfo.rawChatId });
-        await ack("Cache flushed!");
-        if (adapter.editMessage && message.messageId) {
-          await adapter.editMessage(
-            message.chatId,
-            message.messageId,
-            "🔄 <b>Cache flushed.</b>\n\nThe memory chat ID cache has been cleared. Restart the bot to re-resolve the channel."
-          ).catch(() => {});
+        try {
+          this.memoryChannelInfo.cacheStore.delete(this.memoryChannelInfo.rawChatId);
+          this.logger.info("Memory chat ID cache flushed.", { rawChatId: this.memoryChannelInfo.rawChatId });
+          await ack("Cache flushed!");
+          if (adapter.editMessage && message.messageId) {
+            await adapter.editMessage(
+              message.chatId,
+              message.messageId,
+              "🔄 <b>Cache flushed.</b>\n\nThe memory chat ID cache has been cleared. Restart the bot to re-resolve the channel."
+            ).catch(() => {});
+          }
+        } catch (error) {
+          this.logger.error("Failed to flush memory chat ID cache.", {
+            rawChatId: this.memoryChannelInfo.rawChatId,
+            reason: error instanceof Error ? error.message : "unknown",
+          });
+          await ack("Failed to flush cache. Please try again.");
         }
         return;
       }
