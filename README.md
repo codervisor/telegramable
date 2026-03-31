@@ -167,7 +167,7 @@ Both the CLI gateway and the web frontend run in the same container. The web UI 
 1. Create a new project on [Railway](https://railway.app) and connect the GitHub repo.
 2. Railway picks up `railway.toml` automatically — no manual settings needed.
 3. Add your environment variables (see [Configuration](#configuration) above).
-4. **Add a volume** — in the Railway dashboard, go to your service → **Settings → Volumes**, click **Add Volume**, and set the mount path to `/data`. This gives the container persistent storage for SQLite databases, agent session data, and any files the agent writes. Without a volume, all data is lost on each redeploy. The agent uses `/data` as its working directory whenever that directory exists; mounting a volume at `/data` makes this data persistent across redeploys.
+4. **Add a volume** — in the Railway dashboard, go to your service → **Settings → Volumes**, click **Add Volume**, and set the mount path to `/data`. This gives the container persistent storage for SQLite databases, agent session data, Claude Code conversation history (`~/.claude`), and any files the agent writes. Without a volume, all data is lost on each redeploy. On startup, the container automatically symlinks `~/.claude` → `/data/.claude` so that Claude Code sessions survive redeploys.
 5. Deploy.
 
 Alternatively, use the Railway CLI:

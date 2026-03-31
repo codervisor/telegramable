@@ -243,7 +243,7 @@ export const loadConfig = (): Config => {
     agents: parseAgents(),
     defaultAgent: process.env.DEFAULT_AGENT,
     logLevel: parseLogLevel(process.env.LOG_LEVEL),
-    dataDir: process.env.DATA_DIR || undefined,
+    dataDir: process.env.DATA_DIR || defaultWorkingDir() || undefined,
     memory: memoryChatId
       ? {
           enabled: true,
