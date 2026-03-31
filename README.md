@@ -52,10 +52,12 @@ Set environment variables in `.env` or your deployment platform (Railway, Docker
 | ALLOWED_USER_IDS    | -        | Comma-separated Telegram user IDs  |
 | RUNTIME_TYPE        | cli      | Runtime type (see below)           |
 | RUNTIME_COMMAND     | -        | Agent command (e.g., `copilot`)    |
-| RUNTIME_WORKING_DIR | -        | Working directory for the agent    |
+| RUNTIME_WORKING_DIR | `/data`¹ | Working directory for the agent    |
 | RUNTIME_TIMEOUT_MS  | 600000   | Agent execution timeout in ms      |
 | DEFAULT_AGENT       | default  | Default agent name                 |
 | LOG_LEVEL           | info     | Log verbosity (`debug`, `info`, `warn`, `error`) |
+
+¹ Defaults to `/data` automatically when the directory exists (Docker/Railway). No default outside containers.
 
 Supported runtimes: `cli`, `session-claude`, `session-claude-sdk`, `session-gemini`, `session-copilot`.
 
@@ -165,9 +167,8 @@ Both the CLI gateway and the web frontend run in the same container. The web UI 
 1. Create a new project on [Railway](https://railway.app) and connect the GitHub repo.
 2. Railway picks up `railway.toml` automatically — no manual settings needed.
 3. Add your environment variables (see [Configuration](#configuration) above).
-4. **Add a volume** — in the Railway dashboard, go to your service → **Settings → Volumes**, click **Add Volume**, and set the mount path to `/data`. This gives the container persistent storage for SQLite databases, agent session data, and any files the agent writes. Without a volume, all data is lost on each redeploy.
-5. Set the `RUNTIME_WORKING_DIR` environment variable to `/data` (or a subdirectory like `/data/workspace`) so the agent operates inside the persistent volume.
-6. Deploy.
+4. **Add a volume** — in the Railway dashboard, go to your service → **Settings → Volumes**, click **Add Volume**, and set the mount path to `/data`. This gives the container persistent storage for SQLite databases, agent session data, and any files the agent writes. Without a volume, all data is lost on each redeploy. The agent automatically uses `/data` as its working directory when the volume is mounted.
+5. Deploy.
 
 Alternatively, use the Railway CLI:
 

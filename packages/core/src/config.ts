@@ -184,7 +184,7 @@ const parseAgents = (): AgentConfig[] => {
     name: process.env.DEFAULT_AGENT || "default",
     runtime,
     command,
-    workingDir: process.env.RUNTIME_WORKING_DIR,
+    workingDir: process.env.RUNTIME_WORKING_DIR || (existsSync("/data") ? "/data" : undefined),
     timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 10 * 60 * 1000,
     maxTurns: maxTurns && Number.isFinite(maxTurns) ? maxTurns : undefined,
     model: process.env.CLAUDE_MODEL,
