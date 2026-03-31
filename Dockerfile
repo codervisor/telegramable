@@ -51,7 +51,9 @@ COPY --from=builder /deploy/cli ./cli/
 COPY start.sh ./
 RUN chmod +x ./start.sh
 
-# Persistent data directory (mount a Railway Volume at /data)
+# Persistent data directory — mount a Railway Volume (or Docker volume) at /data.
+# Without a volume, all data (SQLite DBs, agent sessions, workspace files) is lost on redeploy.
+# See README.md "Railway" section for setup instructions.
 RUN mkdir -p /data && chown claude:claude /data
 
 # Ensure the non-root user owns the app directory
