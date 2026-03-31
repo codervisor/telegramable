@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { spawn } from "child_process";
-import { existsSync, writeFileSync, readFileSync, mkdirSync, unlinkSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdtempSync, chmodSync, rmdirSync, openSync, closeSync, constants as fsConstants } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { AgentConfig } from "../config";
@@ -135,9 +135,10 @@ export class CliRuntime implements Runtime {
 
   /**
    * Write a temporary MCP config file and memory state file for the CLI subprocess.
-   * Returns paths so they can be cleaned up after execution.
+   * Returns paths and a baseline snapshot so changes can be diffed correctly even
+   * when concurrent executions mutate the shared in-process MemoryStore.
    */
-  private prepareMcpConfig(executionId: string): { mcpConfigPath: string; stateFilePath: string } | null {
+  private prepareMcpConfig(executionId: string): { mcpDir: string; mcpConfigPath: string; stateFilePath: string; baseline: MemorySnapshot } | null {
     if (!this.useAgentDrivenMemory || !this.memoryStore) return null;
 
     const stdioScript = this.resolveMemoryMcpStdioPath();
@@ -146,14 +147,27 @@ export class CliRuntime implements Runtime {
       return null;
     }
 
-    const dir = join(tmpdir(), "telegramable-mcp");
-    mkdirSync(dir, { recursive: true });
+    // Create a per-execution temp directory with restrictive permissions (0o700)
+    const mcpDir = mkdtempSync(join(tmpdir(), `telegramable-mcp-${executionId}-`));
+    chmodSync(mcpDir, 0o700);
 
-    const stateFilePath = join(dir, `memory-${executionId}.json`);
-    const mcpConfigPath = join(dir, `mcp-${executionId}.json`);
+    const stateFilePath = join(mcpDir, "memory-state.json");
+    const mcpConfigPath = join(mcpDir, "mcp-config.json");
 
-    // Write current memory state
-    writeFileSync(stateFilePath, JSON.stringify(this.memoryStore.snapshot(), null, 2), "utf-8");
+    // Capture baseline snapshot before spawning — used for diffing later
+    const baseline = this.memoryStore.snapshot();
+
+    // Write files with restrictive permissions (0o600) via O_EXCL to prevent symlink attacks
+    const writeSecure = (path: string, data: string): void => {
+      const fd = openSync(path, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, 0o600);
+      try {
+        writeFileSync(fd, data, "utf-8");
+      } finally {
+        closeSync(fd);
+      }
+    };
+
+    writeSecure(stateFilePath, JSON.stringify(baseline, null, 2));
 
     // Write MCP config pointing to the stdio script
     const mcpConfig = {
@@ -164,51 +178,54 @@ export class CliRuntime implements Runtime {
         },
       },
     };
-    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
+    writeSecure(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
 
-    this.logger.debug("Prepared MCP config for CLI memory tools.", { mcpConfigPath, stateFilePath, executionId });
-    return { mcpConfigPath, stateFilePath };
+    this.logger.debug("Prepared MCP config for CLI memory tools.", { mcpDir, executionId });
+    return { mcpDir, mcpConfigPath, stateFilePath, baseline };
   }
 
-  /** Read back memory state from the temp file and sync any changes to Telegram. */
-  private async syncMemoryFromFile(stateFilePath: string): Promise<void> {
+  /**
+   * Read back memory state from the temp file, diff against the baseline snapshot
+   * captured at prepare time, and apply only the subprocess's changes to the live store.
+   * Diffing against the baseline (not the live store) avoids misclassifying changes
+   * when concurrent executions mutate the shared MemoryStore.
+   */
+  private async syncMemoryFromFile(stateFilePath: string, baseline: MemorySnapshot): Promise<void> {
     if (!this.memoryStore || !this.memorySync) return;
 
     try {
       const raw = readFileSync(stateFilePath, "utf-8");
-      const snapshot: MemorySnapshot = JSON.parse(raw);
-      if (!snapshot.v || !Array.isArray(snapshot.facts)) return;
+      const afterSnapshot: MemorySnapshot = JSON.parse(raw);
+      if (!afterSnapshot.v || !Array.isArray(afterSnapshot.facts)) return;
 
-      // Diff: compare snapshot facts with current store
-      const currentFacts = this.memoryStore.all();
-      const currentIds = new Set(currentFacts.map((f) => f.id));
-      const snapshotIds = new Set(snapshot.facts.map((f) => f.id));
-      const snapshotMap = new Map(snapshot.facts.map((f) => [f.id, f]));
+      // Build lookup maps from baseline and subprocess result
+      const baselineMap = new Map(baseline.facts.map((f) => [f.id, f]));
+      const afterMap = new Map(afterSnapshot.facts.map((f) => [f.id, f]));
 
       const changelogParts: string[] = [];
 
-      // Detect added facts
-      for (const fact of snapshot.facts) {
-        if (!currentIds.has(fact.id)) {
-          this.memoryStore.add(fact.tag, fact.text);
-          changelogParts.push(`➕ <code>${fact.id}</code> [${fact.tag}] ${fact.text}`);
+      // Detect facts added by the subprocess (in after but not in baseline)
+      for (const fact of afterSnapshot.facts) {
+        if (!baselineMap.has(fact.id)) {
+          const added = this.memoryStore.add(fact.tag, fact.text);
+          changelogParts.push(`➕ <code>${added.id}</code> [${fact.tag}] ${fact.text}`);
         }
       }
 
-      // Detect updated facts
-      for (const current of currentFacts) {
-        const updated = snapshotMap.get(current.id);
-        if (updated && updated.text !== current.text) {
-          this.memoryStore.update(current.id, updated.text);
-          changelogParts.push(`✏️ <code>${current.id}</code> → ${updated.text}`);
+      // Detect facts updated by the subprocess (in both, but text differs)
+      for (const [id, baseFact] of baselineMap) {
+        const afterFact = afterMap.get(id);
+        if (afterFact && afterFact.text !== baseFact.text) {
+          this.memoryStore.update(id, afterFact.text);
+          changelogParts.push(`✏️ <code>${id}</code> → ${afterFact.text}`);
         }
       }
 
-      // Detect removed facts
-      for (const current of currentFacts) {
-        if (!snapshotIds.has(current.id)) {
-          this.memoryStore.remove(current.id);
-          changelogParts.push(`🗑️ <code>${current.id}</code> ${current.text}`);
+      // Detect facts removed by the subprocess (in baseline but not in after)
+      for (const [id, baseFact] of baselineMap) {
+        if (!afterMap.has(id)) {
+          this.memoryStore.remove(id);
+          changelogParts.push(`🗑️ <code>${id}</code> ${baseFact.text}`);
         }
       }
 
@@ -227,10 +244,11 @@ export class CliRuntime implements Runtime {
     }
   }
 
-  /** Clean up temporary MCP files. */
-  private cleanupMcpFiles(mcpConfigPath: string, stateFilePath: string): void {
+  /** Clean up temporary MCP directory and its files. */
+  private cleanupMcpFiles(mcpDir: string, mcpConfigPath: string, stateFilePath: string): void {
     try { unlinkSync(mcpConfigPath); } catch { /* ignore */ }
     try { unlinkSync(stateFilePath); } catch { /* ignore */ }
+    try { rmdirSync(mcpDir); } catch { /* ignore */ }
   }
 
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
@@ -311,6 +329,7 @@ export class CliRuntime implements Runtime {
 
       const timeout: NodeJS.Timeout = setTimeout(() => {
         child.kill("SIGKILL");
+        if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
         this.logger.error("CLI runtime timeout — killing process.", {
           executionId,
           pid: child.pid,
@@ -361,7 +380,7 @@ export class CliRuntime implements Runtime {
       child.on("error", (error: NodeJS.ErrnoException) => {
         clearTimeout(timeout);
         clearInterval(heartbeat);
-        if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
+        if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
         let reason = error.message;
         if (error.code === "ENOENT") {
           reason = this.config.workingDir && !existsSync(this.config.workingDir)
@@ -397,6 +416,7 @@ export class CliRuntime implements Runtime {
 
         // Exit code 127 means the shell could not find the command
         if (code === 127) {
+          if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
           const reason = `Command not found: "${executable}". Ensure it is installed and available in PATH.`;
           eventBus.emit({
             executionId,
@@ -437,9 +457,12 @@ export class CliRuntime implements Runtime {
 
         // Sync memories from the MCP state file (agent-driven), or fall back to post-hoc extraction
         if (mcpFiles && this.memoryStore && this.memorySync) {
-          void this.syncMemoryFromFile(mcpFiles.stateFilePath).finally(() => {
-            this.cleanupMcpFiles(mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
+          void this.syncMemoryFromFile(mcpFiles.stateFilePath, mcpFiles.baseline).finally(() => {
+            this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
           });
+        } else if (mcpFiles) {
+          // Agent-driven memory prepared but sync deps missing — just clean up
+          this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
         } else if (response && this.memoryExtractor && this.memoryStore && this.memorySync) {
           void this.extractMemory(message.text, response);
         }

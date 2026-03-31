@@ -32,8 +32,6 @@ interface MemorySnapshot {
 
 // ---------- in-process store ----------
 
-const VALID_TAGS: MemoryTag[] = ["project", "personal", "preference", "decision", "context"];
-
 class MiniStore {
   private facts = new Map<string, MemoryFact>();
   private nextId = 1;
