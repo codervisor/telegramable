@@ -4,23 +4,31 @@
 # Claude Code stores conversation history and session data in ~/.claude.
 # When a Railway Volume (or Docker volume) is mounted at /data, we symlink
 # ~/.claude → /data/.claude so that session data survives redeploys.
-CLAUDE_HOME="/home/claude/.claude"
+CLAUDE_HOME="${HOME}/.claude"
 PERSIST_DIR="/data/.claude"
 
-if [ -d /data ]; then
+# Detect whether /data is an actual mount point (volume), not just the empty
+# directory created by the Dockerfile.  Try `mountpoint` first, fall back to
+# /proc/self/mountinfo for minimal images that lack the util.
+data_is_volume() {
+  { command -v mountpoint >/dev/null 2>&1 && mountpoint -q /data; } ||
+    grep -qE ' /data(/| )' /proc/self/mountinfo 2>/dev/null
+}
+
+if data_is_volume; then
   # Ensure the persistent directory exists
   mkdir -p "$PERSIST_DIR"
 
   # If ~/.claude already exists (from the install step) and is NOT a symlink,
   # seed the persistent dir with any existing content, then replace with symlink.
-  if [ -d "$CLAUDE_HOME" ] && [ ! -L "$CLAUDE_HOME" ]; then
+  if [ -e "$CLAUDE_HOME" ] && [ ! -L "$CLAUDE_HOME" ]; then
     cp -a "$CLAUDE_HOME/." "$PERSIST_DIR/" 2>/dev/null || true
     rm -rf "$CLAUDE_HOME"
   fi
 
-  # Create the symlink (idempotent — remove stale symlink first)
-  if [ -L "$CLAUDE_HOME" ]; then
-    rm "$CLAUDE_HOME"
+  # Create the symlink (idempotent — remove stale entry first)
+  if [ -e "$CLAUDE_HOME" ] || [ -L "$CLAUDE_HOME" ]; then
+    rm -rf "$CLAUDE_HOME"
   fi
   ln -s "$PERSIST_DIR" "$CLAUDE_HOME"
   echo "[telegramable] Claude Code sessions will persist at $PERSIST_DIR"
