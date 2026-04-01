@@ -16,12 +16,13 @@ data_is_volume() {
 }
 
 if data_is_volume; then
-  # Ensure the data directory and its contents are writable by the current user.
+  # Ensure the data directory is writable by the current user.
   # Railway volumes are created as root; the Dockerfile's chown is overridden by the mount.
   if [ ! -w /data ]; then
     echo "[telegramable] Fixing /data permissions for $(whoami)..."
-    # Try to fix ownership — works when the container has CAP_CHOWN (common on Railway)
-    chown "$(id -u):$(id -g)" /data 2>/dev/null || true
+    # Fix ownership of the mountpoint so we can create files/subdirectories.
+    # Uses -R to also cover existing nested files from prior deploys.
+    chown -R "$(id -u):$(id -g)" /data 2>/dev/null || true
   fi
 
   # Ensure the persistent directory exists
