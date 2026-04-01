@@ -32,14 +32,17 @@ export class FileSessionStore {
         if (!existsSync(dir)) {
           mkdirSync(dir, { recursive: true });
         }
-        accessSync(dir, fsConstants.W_OK);
+        accessSync(dir, fsConstants.W_OK | fsConstants.X_OK);
       }
       return true;
-    } catch {
+    } catch (error) {
       this.logger?.warn(
         "Session store path is not writable — running in memory-only mode. " +
         "Sessions will not persist across restarts.",
-        { filePath }
+        {
+          filePath,
+          reason: error instanceof Error ? error.message : "unknown"
+        }
       );
       return false;
     }
