@@ -260,14 +260,16 @@ export class CliRuntime implements Runtime {
       throw new Error("Agent command is required for cli runtime.");
     }
 
-    eventBus.emit({
-      executionId,
-      channelId: message.channelId,
-      chatId: message.chatId,
-      type: "start",
-      timestamp: Date.now(),
-      payload: { agentName: this.config.name }
-    });
+    if (!isRetry) {
+      eventBus.emit({
+        executionId,
+        channelId: message.channelId,
+        chatId: message.chatId,
+        type: "start",
+        timestamp: Date.now(),
+        payload: { agentName: this.config.name }
+      });
+    }
 
     // Prepare MCP config for agent-driven memory (if enabled)
     const mcpFiles = this.prepareMcpConfig(executionId);
