@@ -252,6 +252,10 @@ export class CliRuntime implements Runtime {
   }
 
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
+    return this._execute(message, executionId, eventBus, false);
+  }
+
+  private async _execute(message: IMMessage, executionId: string, eventBus: EventBus, isRetry: boolean): Promise<void> {
     if (!this.config.command) {
       throw new Error("Agent command is required for cli runtime.");
     }
@@ -270,7 +274,7 @@ export class CliRuntime implements Runtime {
 
     return new Promise((resolve, reject) => {
       const sessionKey = `${message.channelId}::${message.chatId}`;
-      const existingSessionId = this.sessions.get(sessionKey) || this.fileStore?.get(sessionKey);
+      const existingSessionId = isRetry ? undefined : (this.sessions.get(sessionKey) || this.fileStore?.get(sessionKey));
 
       const { executable, initialArgs } = this.parseCommand();
 
@@ -439,6 +443,15 @@ export class CliRuntime implements Runtime {
           });
           this.sessions.delete(sessionKey);
           this.fileStore?.delete(sessionKey);
+
+          // If this was a resumed session that failed because the conversation
+          // no longer exists, transparently retry with a fresh session.
+          if (existingSessionId && !isRetry && /no conversation found/i.test(stderr)) {
+            if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
+            this.logger.info("Retrying with fresh session after stale resume ID.", { executionId, staleSessionId: existingSessionId });
+            resolve(this._execute(message, executionId, eventBus, true));
+            return;
+          }
         }
 
         const response = stdoutChunks.join("").trim();

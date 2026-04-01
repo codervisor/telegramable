@@ -12,6 +12,7 @@ const logger = createLogger("error");
 
 // Helper script that accepts a mode arg and ignores extra args (--session-id etc.)
 const TEST_CMD = path.resolve(__dirname, "helpers/test-cmd.sh");
+const STALE_SESSION_CMD = path.resolve(__dirname, "helpers/stale-session-cmd.sh");
 
 const msg = (overrides?: Partial<IMMessage>): IMMessage => ({
   channelId: "telegram",
@@ -277,6 +278,32 @@ test("CliRuntime passes config flags to the command", async () => {
   assert.ok(stdout.includes("--max-turns 5"), "should include --max-turns");
   assert.ok(stdout.includes("--output-format json"), "should include --output-format");
   assert.ok(stdout.includes("--bare"), "should include --bare");
+});
+
+// ---------- retry on stale session ----------
+
+test("CliRuntime retries with fresh session when resume fails with 'No conversation found'", async () => {
+  // stale-session-cmd.sh fails with "No conversation found" when --resume is present,
+  // succeeds with --session-id
+  const config: AgentConfig = { name: "stale-agent", command: STALE_SESSION_CMD };
+  const runtime = new CliRuntime(config, logger);
+
+  // First call: establishes a session (uses --session-id, succeeds)
+  const eb1 = new EventBus();
+  const ev1 = collect(eb1);
+  await runtime.execute(msg(), "exec-stale-1", eb1);
+  const out1 = ev1.filter((e) => e.type === "stream-text").map((e) => e.payload?.text).join("");
+  assert.ok(out1.includes("--session-id"), "first call should use --session-id");
+
+  // Second call: would use --resume (stale), should auto-retry with --session-id
+  const eb2 = new EventBus();
+  const ev2 = collect(eb2);
+  await runtime.execute(msg(), "exec-stale-2", eb2);
+  // The retry should succeed with --session-id in the output
+  const completeEvents = ev2.filter((e) => e.type === "complete");
+  const lastComplete = completeEvents[completeEvents.length - 1];
+  assert.ok(lastComplete?.payload?.response?.includes("--session-id"), "retry should use --session-id");
+  assert.ok(!lastComplete?.payload?.response?.includes("--resume"), "retry should not use --resume");
 });
 
 // ---------- event metadata ----------

@@ -19,6 +19,10 @@ case "$mode" in
     ;;
   stderr)        echo err >&2 ;;
   fail)          exit 1 ;;
+  fail-no-conversation)
+    echo "No conversation found with session ID: fake-session-id" >&2
+    exit 1
+    ;;
   hang)          sleep 60 ;;
   *)             echo "unknown mode: $mode" >&2; exit 2 ;;
 esac
