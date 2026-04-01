@@ -6,6 +6,7 @@
 #   echo-last-arg - prints the last positional argument (the prompt after "--")
 #   stderr        - writes "err" to stderr
 #   fail          - exits with code 1
+#   fail-no-conversation - exits with code 1 and "No conversation found" stderr
 #   hang          - sleeps for 60s (for timeout tests)
 mode="$1"
 shift
