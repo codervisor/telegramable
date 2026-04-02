@@ -56,10 +56,44 @@ Set environment variables in `.env` or your deployment platform (Railway, Docker
 | RUNTIME_TIMEOUT_MS  | 600000   | Agent execution timeout in ms      |
 | DEFAULT_AGENT       | default  | Default agent name                 |
 | LOG_LEVEL           | info     | Log verbosity (`debug`, `info`, `warn`, `error`) |
+| PERMISSION_MODE     | -        | Claude permission mode (see below) |
+| ALLOWED_TOOLS       | -        | Comma-separated tool names to allow |
+| DISALLOWED_TOOLS    | -        | Comma-separated tool names to deny |
+| CLAUDE_MODEL        | -        | Claude model override (e.g., `claude-sonnet-4-6`) |
+| SYSTEM_PROMPT       | -        | Custom system prompt for the agent |
+| MAX_TURNS           | -        | Max agentic turns per execution    |
+| MAX_BUDGET_USD      | -        | Max spend per execution (USD)      |
+| BARE                | false    | Strip all formatting from output   |
 
 ¹ Defaults to `/data` automatically whenever the `/data` directory exists (commonly in Docker/Railway/containerized environments).
 
 Supported runtimes: `cli`, `session-claude`, `session-claude-sdk`, `session-gemini`, `session-copilot`.
+
+### Permissions
+
+The `PERMISSION_MODE` variable controls how the agent handles tool approval:
+
+| Mode                | Behavior |
+| ------------------- | -------- |
+| `plan`              | Agent can read files and search, but asks for approval before writes/commands |
+| `auto`              | Agent auto-approves safe tools; still asks for destructive ones |
+| `bypassPermissions` | Agent runs all tools without asking (requires non-root user in Docker) |
+
+For the **SDK runtime** (`session-claude-sdk`), permission requests are forwarded to Telegram as inline keyboard buttons — tap "Allow" or "Deny" to approve each tool call.
+
+For the **CLI runtime**, permission mode maps directly to `claude --permission-mode <mode>`.
+
+**Fine-grained tool control** — use `ALLOWED_TOOLS` and `DISALLOWED_TOOLS` to whitelist or blacklist specific tools:
+
+```bash
+# Only allow file reads and searches
+ALLOWED_TOOLS=Read,Glob,Grep
+
+# Allow everything except bash
+DISALLOWED_TOOLS=Bash
+```
+
+> **Tip for Railway/Docker deployments:** If the agent's first response is a generic "I'm Claude Code, here's what I can do" message instead of answering your question, set `PERMISSION_MODE=auto` or `PERMISSION_MODE=bypassPermissions` so it doesn't wait for tool approvals that can't be delivered in CLI mode.
 
 ### Long-Term Memory
 
