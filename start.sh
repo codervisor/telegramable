@@ -17,7 +17,7 @@ if [ "$(id -u)" = "0" ]; then
   fi
 
   # Re-exec this script as the claude user (continues below)
-  exec su claude -s /bin/bash -c "$0"
+  exec gosu claude "$0"
 fi
 
 # ── Everything below runs as the `claude` user ──────────────────────────────

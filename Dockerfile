@@ -35,7 +35,7 @@ RUN groupadd -r claude && useradd -r -g claude -m -d /home/claude claude
 
 # Install Claude Code CLI as non-root user
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates && \
+    apt-get install -y --no-install-recommends curl ca-certificates gosu && \
     su claude -c 'curl -fsSL https://claude.ai/install.sh | bash' && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 ENV PATH="/home/claude/.local/bin:/home/claude/.claude/local/bin:${PATH}"
@@ -66,5 +66,5 @@ ENV HOSTNAME="0.0.0.0"
 # NOTE: We intentionally do NOT set `USER claude` here.
 # start.sh runs as root to fix /data volume permissions (Railway volumes mount
 # as root, overriding the Dockerfile's chown), then drops to the `claude` user
-# via `exec su claude …` before starting the application processes.
+# via `exec gosu claude` before starting the application processes.
 CMD ["./start.sh"]
