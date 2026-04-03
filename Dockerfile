@@ -33,13 +33,24 @@ ENV NODE_ENV=production
 # Create non-root user (required: Claude CLI refuses --dangerously-skip-permissions as root)
 RUN groupadd -r claude && useradd -r -g claude -m -d /home/claude claude
 
-# Install Claude Code CLI as non-root user
+# System utilities and sudo access for the non-root claude user
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates gosu git openssh-client sudo && \
     echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/claude && \
     chmod 0440 /etc/sudoers.d/claude && \
-    su claude -c 'curl -fsSL https://claude.ai/install.sh | bash' && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Common development tools (gcc, make, python, etc.)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      python3 python3-pip python3-venv \
+      jq wget unzip \
+      pkg-config libssl-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI as non-root user
+RUN su claude -c 'curl -fsSL https://claude.ai/install.sh | bash'
 ENV PATH="/home/claude/.local/bin:/home/claude/.claude/local/bin:${PATH}"
 
 # Web — Next.js standalone output
