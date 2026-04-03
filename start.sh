@@ -60,23 +60,20 @@ else
   echo "[telegramable] No /data volume detected — Claude Code sessions will be ephemeral"
 fi
 
-# ── Seed project context files into /data ──────────────────────────────────
-# Claude Code needs CLAUDE.md, AGENTS.md, and skill docs in its working
-# directory (/data) to have project context. Copy from the image if they
-# don't already exist (preserves user customizations on the volume).
-CONTEXT_DIR="/app/context"
-if [ -d "$CONTEXT_DIR" ]; then
-  for f in CLAUDE.md AGENTS.md; do
-    if [ -f "$CONTEXT_DIR/$f" ] && [ ! -f "/data/$f" ]; then
-      cp "$CONTEXT_DIR/$f" "/data/$f"
-      echo "[telegramable] Seeded /data/$f"
+# ── Seed project context templates into /data ──────────────────────────────
+# Claude Code reads CLAUDE.md from its working directory (/data) for project
+# context. We seed from templates shipped in the image; existing files on the
+# volume are left untouched so user customizations persist across redeploys.
+TEMPLATES_DIR="/app/templates"
+if [ -d "$TEMPLATES_DIR" ]; then
+  for f in "$TEMPLATES_DIR"/*.md; do
+    [ -f "$f" ] || continue
+    base="$(basename "$f")"
+    if [ ! -f "/data/$base" ]; then
+      cp "$f" "/data/$base"
+      echo "[telegramable] Seeded /data/$base from template"
     fi
   done
-  if [ -d "$CONTEXT_DIR/.github/skills" ] && [ ! -d "/data/.github/skills" ]; then
-    mkdir -p /data/.github
-    cp -r "$CONTEXT_DIR/.github/skills" /data/.github/skills
-    echo "[telegramable] Seeded /data/.github/skills/"
-  fi
 fi
 
 # Start web server

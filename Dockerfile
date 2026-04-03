@@ -51,10 +51,9 @@ COPY --from=builder /deploy/cli ./cli/
 COPY start.sh ./
 RUN chmod +x ./start.sh
 
-# Project context files — seeded into /data on startup so Claude Code
-# has CLAUDE.md, AGENTS.md and skill docs in its working directory.
-COPY CLAUDE.md AGENTS.md ./context/
-COPY .github/skills/ ./context/.github/skills/
+# Project context templates — seeded into /data on startup so Claude Code
+# has CLAUDE.md in its working directory with agent-specific context.
+COPY deploy/templates/ ./templates/
 
 # Persistent data directory — mount a Railway Volume (or Docker volume) at /data.
 # Without a volume, all data (SQLite DBs, agent sessions, workspace files) is lost on redeploy.
