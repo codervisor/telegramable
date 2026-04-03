@@ -61,8 +61,18 @@ export class CliRuntime implements Runtime {
     return { executable: parts[0], initialArgs: parts.slice(1) };
   }
 
+  /** MCP tool names that must be allowlisted for agent-driven memory. */
+  private static readonly MEMORY_MCP_TOOLS = [
+    "mcp__memory__save_memory",
+    "mcp__memory__update_memory",
+    "mcp__memory__delete_memory",
+    "mcp__memory__list_memories",
+    "mcp__memory__search_memories",
+    "mcp__memory__get_memory",
+  ];
+
   /** Build CLI args from AgentConfig (model, tools, permissions, etc.). */
-  private buildConfigArgs(): string[] {
+  private buildConfigArgs(mcpActive: boolean): string[] {
     const args: string[] = [];
 
     if (this.config.model) {
@@ -94,8 +104,18 @@ export class CliRuntime implements Runtime {
       }
     }
 
-    if (this.config.allowedTools?.length) {
-      for (const tool of this.config.allowedTools) {
+    // Collect allowed tools: user-configured + memory MCP tools (when active)
+    const allowedTools = [...(this.config.allowedTools || [])];
+    if (mcpActive) {
+      for (const tool of CliRuntime.MEMORY_MCP_TOOLS) {
+        if (!allowedTools.includes(tool)) {
+          allowedTools.push(tool);
+        }
+      }
+    }
+
+    if (allowedTools.length) {
+      for (const tool of allowedTools) {
         args.push("--allowedTools", tool);
       }
     }
@@ -294,7 +314,7 @@ export class CliRuntime implements Runtime {
       const args = [
         ...initialArgs,
         ...(this.config.args || []),
-        ...this.buildConfigArgs()
+        ...this.buildConfigArgs(!!mcpFiles)
       ];
 
       // Attach memory MCP server if prepared
