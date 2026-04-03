@@ -35,7 +35,9 @@ RUN groupadd -r claude && useradd -r -g claude -m -d /home/claude claude
 
 # Install Claude Code CLI as non-root user
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gosu git openssh-client && \
+    apt-get install -y --no-install-recommends curl ca-certificates gosu git openssh-client sudo && \
+    echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/claude && \
+    chmod 0440 /etc/sudoers.d/claude && \
     su claude -c 'curl -fsSL https://claude.ai/install.sh | bash' && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 ENV PATH="/home/claude/.local/bin:/home/claude/.claude/local/bin:${PATH}"
