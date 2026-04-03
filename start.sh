@@ -69,9 +69,12 @@ if [ -d "$TEMPLATES_DIR" ]; then
   for f in "$TEMPLATES_DIR"/*.md; do
     [ -f "$f" ] || continue
     base="$(basename "$f")"
-    if [ ! -f "/data/$base" ]; then
-      cp "$f" "/data/$base"
-      echo "[telegramable] Seeded /data/$base from template"
+    if [ ! -e "/data/$base" ]; then
+      if cp "$f" "/data/$base"; then
+        echo "[telegramable] Seeded /data/$base from template"
+      else
+        echo "[telegramable] Warning: failed to seed /data/$base from template" >&2
+      fi
     fi
   done
 fi
