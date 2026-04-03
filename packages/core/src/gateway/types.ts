@@ -43,4 +43,5 @@ export interface IMAdapter {
   createForumTopic?: (chatId: string, name: string) => Promise<number>;
   closeForumTopic?: (chatId: string, topicId: number) => Promise<void>;
   sendChatAction?: (chatId: string, action: string, options?: { threadId?: number }) => Promise<void>;
+  setMessageReaction?: (chatId: string, messageId: number, emoji: string | null) => Promise<void>;
 }

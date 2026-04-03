@@ -222,6 +222,16 @@ export class TelegramAdapter implements IMAdapter {
     });
   }
 
+  async setMessageReaction(chatId: string, messageId: number, emoji: string | null): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not started.");
+    }
+    const reaction = emoji
+      ? [{ type: "emoji" as const, emoji }]
+      : [];
+    await this.bot.api.setMessageReaction(Number(chatId), messageId, reaction);
+  }
+
   async closeForumTopic(chatId: string, topicId: number): Promise<void> {
     if (!this.bot) {
       throw new Error("Telegram bot not started.");

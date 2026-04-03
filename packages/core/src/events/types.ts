@@ -1,5 +1,6 @@
 export type ExecutionEventType =
   | "start"
+  | "queued"
   | "stdout"
   | "stderr"
   | "complete"
@@ -31,5 +32,8 @@ export interface ExecutionEvent {
 
     // Streaming fields
     sessionId?: string;
+
+    // Source message metadata (e.g. for reactions)
+    messageId?: number;
   };
 }

@@ -272,6 +272,20 @@ export class CliRuntime implements Runtime {
   async execute(message: IMMessage, executionId: string, eventBus: EventBus): Promise<void> {
     const queueKey = `${message.channelId}::${message.chatId}`;
     const prev = this.executionQueues.get(queueKey) ?? Promise.resolve();
+
+    // If there's a pending execution for this session, emit a "queued" event
+    // so the hub can show the user their message is waiting (e.g. via reaction).
+    if (this.executionQueues.has(queueKey)) {
+      eventBus.emit({
+        executionId,
+        channelId: message.channelId,
+        chatId: message.chatId,
+        type: "queued",
+        timestamp: Date.now(),
+        payload: { messageId: message.messageId }
+      });
+    }
+
     const next = prev.then(
       () => this._execute(message, executionId, eventBus, false),
       () => this._execute(message, executionId, eventBus, false)
@@ -292,7 +306,7 @@ export class CliRuntime implements Runtime {
         chatId: message.chatId,
         type: "start",
         timestamp: Date.now(),
-        payload: { agentName: this.config.name }
+        payload: { agentName: this.config.name, messageId: message.messageId }
       });
     }
 
