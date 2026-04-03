@@ -683,7 +683,7 @@ export class ChannelHub {
     if (event.type === "queued") {
       if (adapter.setMessageReaction && event.payload?.messageId) {
         this.reactionMessageIds.set(event.executionId, event.payload.messageId);
-        await adapter.setMessageReaction(event.chatId, event.payload.messageId, "⏳").catch(() => {
+        adapter.setMessageReaction(event.chatId, event.payload.messageId, "⏳").catch(() => {
           // Non-critical — reaction may not be supported in this chat
         });
       }
@@ -692,9 +692,10 @@ export class ChannelHub {
 
     // Handle start — replace queued reaction with eyes to show processing
     if (event.type === "start") {
-      if (adapter.setMessageReaction && event.payload?.messageId) {
-        this.reactionMessageIds.set(event.executionId, event.payload.messageId);
-        await adapter.setMessageReaction(event.chatId, event.payload.messageId, "👀").catch(() => {
+      const msgId = event.payload?.messageId ?? this.reactionMessageIds.get(event.executionId);
+      if (adapter.setMessageReaction && msgId) {
+        this.reactionMessageIds.set(event.executionId, msgId);
+        adapter.setMessageReaction(event.chatId, msgId, "👀").catch(() => {
           // Non-critical
         });
       }
@@ -732,9 +733,9 @@ export class ChannelHub {
 
       // Clear reaction on the source message
       const reactionMsgId = this.reactionMessageIds.get(event.executionId);
+      this.reactionMessageIds.delete(event.executionId);
       if (reactionMsgId && adapter.setMessageReaction) {
-        this.reactionMessageIds.delete(event.executionId);
-        await adapter.setMessageReaction(event.chatId, reactionMsgId, null).catch(() => {
+        adapter.setMessageReaction(event.chatId, reactionMsgId, null).catch(() => {
           // Non-critical
         });
       }
