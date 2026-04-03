@@ -259,7 +259,6 @@ test("CliRuntime passes config flags to the command", async () => {
     command: "echo",
     model: "opus",
     systemPrompt: "be nice",
-    permissionMode: "plan",
     maxTurns: 5,
     outputFormat: "json",
     bare: true
@@ -274,7 +273,10 @@ test("CliRuntime passes config flags to the command", async () => {
   assert.ok(stdout.includes("--model opus"), "should include --model");
   assert.ok(stdout.includes("--append-system-prompt"), "should pass systemPrompt via --append-system-prompt");
   assert.ok(stdout.includes("be nice"), "should include the system prompt text");
-  assert.ok(stdout.includes("--permission-mode plan"), "should include --permission-mode");
+  // In production the container runs as non-root → bypassPermissions.
+  // In CI/dev that may run as root → falls back to auto.
+  const expectedMode = process.getuid?.() === 0 ? "auto" : "bypassPermissions";
+  assert.ok(stdout.includes(`--permission-mode ${expectedMode}`), `should use --permission-mode ${expectedMode}`);
   assert.ok(stdout.includes("--max-turns 5"), "should include --max-turns");
   assert.ok(stdout.includes("--output-format json"), "should include --output-format");
   assert.ok(stdout.includes("--bare"), "should include --bare");

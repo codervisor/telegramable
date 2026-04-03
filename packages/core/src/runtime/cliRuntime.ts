@@ -61,18 +61,8 @@ export class CliRuntime implements Runtime {
     return { executable: parts[0], initialArgs: parts.slice(1) };
   }
 
-  /** MCP tool names that must be allowlisted for agent-driven memory. */
-  private static readonly MEMORY_MCP_TOOLS = [
-    "mcp__memory__save_memory",
-    "mcp__memory__update_memory",
-    "mcp__memory__delete_memory",
-    "mcp__memory__list_memories",
-    "mcp__memory__search_memories",
-    "mcp__memory__get_memory",
-  ];
-
   /** Build CLI args from AgentConfig (model, tools, permissions, etc.). */
-  private buildConfigArgs(mcpActive: boolean): string[] {
+  private buildConfigArgs(): string[] {
     const args: string[] = [];
 
     if (this.config.model) {
@@ -90,40 +80,17 @@ export class CliRuntime implements Runtime {
       args.push("--append-system-prompt", memorySuffix);
     }
 
-    if (this.config.permissionMode) {
-      // Claude CLI refuses bypassPermissions (--dangerously-skip-permissions) when running as root.
-      // Fall back to "auto" with a warning so the runtime doesn't silently exit.
-      if (this.config.permissionMode === "bypassPermissions" && process.getuid?.() === 0) {
-        this.logger.warn(
-          "bypassPermissions is not allowed as root — falling back to 'auto'. " +
-          "Run the container as a non-root user to use bypassPermissions."
-        );
-        args.push("--permission-mode", "auto");
-      } else {
-        args.push("--permission-mode", this.config.permissionMode);
-      }
-    }
-
-    // Collect allowed tools: user-configured + memory MCP tools (when active)
-    const allowedTools = [...(this.config.allowedTools || [])];
-    if (mcpActive) {
-      for (const tool of CliRuntime.MEMORY_MCP_TOOLS) {
-        if (!allowedTools.includes(tool)) {
-          allowedTools.push(tool);
-        }
-      }
-    }
-
-    if (allowedTools.length) {
-      for (const tool of allowedTools) {
-        args.push("--allowedTools", tool);
-      }
-    }
-
-    if (this.config.disallowedTools?.length) {
-      for (const tool of this.config.disallowedTools) {
-        args.push("--disallowedTools", tool);
-      }
+    // Always use bypassPermissions — the container runs as non-root (claude user),
+    // and no proper HITL flow exists for interactive approval in --print mode.
+    // The root guard remains as a safety net for misconfigured environments.
+    if (process.getuid?.() === 0) {
+      this.logger.warn(
+        "bypassPermissions is not allowed as root — falling back to 'auto'. " +
+        "Run the container as a non-root user to use bypassPermissions."
+      );
+      args.push("--permission-mode", "auto");
+    } else {
+      args.push("--permission-mode", "bypassPermissions");
     }
 
     if (this.config.maxTurns != null) {
@@ -314,7 +281,7 @@ export class CliRuntime implements Runtime {
       const args = [
         ...initialArgs,
         ...(this.config.args || []),
-        ...this.buildConfigArgs(!!mcpFiles)
+        ...this.buildConfigArgs()
       ];
 
       // Attach memory MCP server if prepared
