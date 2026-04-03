@@ -227,7 +227,7 @@ export class TelegramAdapter implements IMAdapter {
       throw new Error("Telegram bot not started.");
     }
     const reaction = emoji
-      ? [{ type: "emoji" as const, emoji }]
+      ? [{ type: "emoji" as const, emoji: emoji as import("grammy/types").ReactionTypeEmoji["emoji"] }]
       : [];
     await this.bot.api.setMessageReaction(Number(chatId), messageId, reaction);
   }
