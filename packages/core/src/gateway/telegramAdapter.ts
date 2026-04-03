@@ -1,5 +1,5 @@
 import { Bot, type BotConfig, Context } from "grammy";
-import type { Update } from "grammy/types";
+import type { Update, ReactionTypeEmoji } from "grammy/types";
 import { IMAdapter, IMAdapterStartOptions, IMMessage } from "./types";
 import { Logger } from "../logging";
 
@@ -227,7 +227,7 @@ export class TelegramAdapter implements IMAdapter {
       throw new Error("Telegram bot not started.");
     }
     const reaction = emoji
-      ? [{ type: "emoji" as const, emoji: emoji as import("grammy/types").ReactionTypeEmoji["emoji"] }]
+      ? [{ type: "emoji" as const, emoji: emoji as ReactionTypeEmoji["emoji"] }]
       : [];
     await this.bot.api.setMessageReaction(Number(chatId), messageId, reaction);
   }
