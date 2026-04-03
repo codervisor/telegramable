@@ -217,6 +217,7 @@ export class ChannelHub {
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
   private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
+  private readonly reactionMessageIds = new Map<string, number>(); // executionId → source messageId for clearing reactions
   private unsubscribeEvents?: () => void;
 
   constructor(
@@ -276,6 +277,7 @@ export class ChannelHub {
     }
     this.toolActivityMessages.clear();
     this.eventQueues.clear();
+    this.reactionMessageIds.clear();
 
     await Promise.all(Array.from(this.adapters.values()).map((adapter) => adapter.stop()));
     this.logger.info("ChannelHub stopped.");
@@ -677,6 +679,27 @@ export class ChannelHub {
   private async forwardEvent(adapter: IMAdapter, event: ExecutionEvent): Promise<void> {
     const topicId = this.getTopicId(event.channelId, event.chatId, event.executionId);
 
+    // Handle queued — react with hourglass to show the message is waiting
+    if (event.type === "queued") {
+      if (adapter.setMessageReaction && event.payload?.messageId) {
+        this.reactionMessageIds.set(event.executionId, event.payload.messageId);
+        await adapter.setMessageReaction(event.chatId, event.payload.messageId, "⏳").catch(() => {
+          // Non-critical — reaction may not be supported in this chat
+        });
+      }
+      return;
+    }
+
+    // Handle start — replace queued reaction with eyes to show processing
+    if (event.type === "start") {
+      if (adapter.setMessageReaction && event.payload?.messageId) {
+        this.reactionMessageIds.set(event.executionId, event.payload.messageId);
+        await adapter.setMessageReaction(event.chatId, event.payload.messageId, "👀").catch(() => {
+          // Non-critical
+        });
+      }
+    }
+
     // Handle permission requests — send inline keyboard
     if (event.type === "permission-request") {
       await this.forwardPermissionRequest(adapter, event, topicId);
@@ -706,6 +729,15 @@ export class ChannelHub {
       this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
       this.clearToolActivity(event.channelId, event.chatId, event.executionId);
       await this.flushAndDeleteThrottler(event.channelId, event.chatId);
+
+      // Clear reaction on the source message
+      const reactionMsgId = this.reactionMessageIds.get(event.executionId);
+      if (reactionMsgId && adapter.setMessageReaction) {
+        this.reactionMessageIds.delete(event.executionId);
+        await adapter.setMessageReaction(event.chatId, reactionMsgId, null).catch(() => {
+          // Non-critical
+        });
+      }
 
       // Flush stream draft and check if we already streamed the response
       const flushedContent = await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
