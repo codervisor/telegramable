@@ -34,21 +34,30 @@ CMD_STRING="$*"
 
 # Write the request file (atomic: write to temp, then rename)
 TEMP_FILE="${SUDO_DIR}/.${REQUEST_ID}.tmp"
-cat > "$TEMP_FILE" <<REQEOF
-{
-  "id": "${REQUEST_ID}",
-  "command": $(printf '%s' "$CMD_STRING" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))' 2>/dev/null || echo "\"${CMD_STRING}\""),
-  "channelId": "${CHANNEL_ID}",
-  "chatId": "${CHAT_ID}",
-  "timestamp": $(date +%s000)
-}
-REQEOF
+TIMESTAMP_MS="$(date +%s000)"
+REQUEST_ID="$REQUEST_ID" \
+CMD_STRING="$CMD_STRING" \
+CHANNEL_ID="$CHANNEL_ID" \
+CHAT_ID="$CHAT_ID" \
+TIMESTAMP_MS="$TIMESTAMP_MS" \
+python3 - <<'PYEOF' > "$TEMP_FILE"
+import json
+import os
+
+print(json.dumps({
+    "id": os.environ["REQUEST_ID"],
+    "command": os.environ["CMD_STRING"],
+    "channelId": os.environ["CHANNEL_ID"],
+    "chatId": os.environ["CHAT_ID"],
+    "timestamp": int(os.environ["TIMESTAMP_MS"]),
+}))
+PYEOF
 mv "$TEMP_FILE" "$REQ_FILE"
 
 # Poll for the response file
-ELAPSED=0
-POLL_INTERVAL_MS=500
-while [ "$ELAPSED" -lt "$TIMEOUT_SECONDS" ]; do
+ITERATIONS=0
+MAX_ITERATIONS=$((TIMEOUT_SECONDS * 2))  # sleep 0.5s per iteration
+while [ "$ITERATIONS" -lt "$MAX_ITERATIONS" ]; do
   if [ -f "$RES_FILE" ]; then
     DECISION="$(cat "$RES_FILE")"
     rm -f "$REQ_FILE" "$RES_FILE"
@@ -62,7 +71,7 @@ while [ "$ELAPSED" -lt "$TIMEOUT_SECONDS" ]; do
   fi
 
   sleep 0.5
-  ELAPSED=$((ELAPSED + 1))  # ~0.5s increments, close enough
+  ITERATIONS=$((ITERATIONS + 1))
 done
 
 # Timeout — clean up and deny

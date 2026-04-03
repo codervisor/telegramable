@@ -132,7 +132,7 @@ export class SudoWatcher {
     });
   }
 
-  private writeResponse(requestId: string, decision: string): void {
+  private writeResponse(requestId: string, decision: "allow" | "deny"): void {
     const request = this.pending.get(requestId);
     if (!request) return;
 
