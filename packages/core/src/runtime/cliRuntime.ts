@@ -352,7 +352,11 @@ export class CliRuntime implements Runtime {
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
-          ...(this.config.env || {})
+          ...(this.config.env || {}),
+          // Pass channel/chat context so the sudo wrapper can route
+          // permission requests back to the correct Telegram chat.
+          TELEGRAMABLE_CHANNEL_ID: message.channelId,
+          TELEGRAMABLE_CHAT_ID: message.chatId,
         }
       });
 

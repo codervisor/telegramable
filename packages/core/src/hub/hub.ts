@@ -17,6 +17,7 @@ import {
 } from "./memoryMarkup";
 import { PermissionBridge } from "./permissionBridge";
 import { Router } from "./router";
+import { SudoWatcher } from "./sudoWatcher";
 
 const TELEGRAM_MSG_LIMIT = 4000;
 
@@ -219,6 +220,7 @@ export class ChannelHub {
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private readonly reactionMessageIds = new Map<string, number>(); // executionId → source messageId for clearing reactions
   private unsubscribeEvents?: () => void;
+  private readonly sudoWatcher?: SudoWatcher;
 
   constructor(
     adapters: IMAdapter[],
@@ -233,6 +235,10 @@ export class ChannelHub {
     this.executionRegistry = executionRegistry ?? new InMemoryExecutionRegistry();
     this.permissionBridge = new PermissionBridge(logger);
 
+    // Start the sudo wrapper watcher if a directory is configured (or use default)
+    const sudoDir = process.env.TELEGRAMABLE_SUDO_DIR || "/tmp/telegramable-sudo";
+    this.sudoWatcher = new SudoWatcher(sudoDir, eventBus, logger);
+
     for (const adapter of adapters) {
       if (this.adapters.has(adapter.id)) {
         throw new Error(`Duplicate channel id '${adapter.id}' in channel configuration.`);
@@ -243,6 +249,7 @@ export class ChannelHub {
 
   async start(options?: IMAdapterStartOptions): Promise<void> {
     this.subscribeEvents();
+    this.sudoWatcher?.start();
     await Promise.all(Array.from(this.adapters.values()).map((adapter) => {
       return adapter.start((message) => void this.handleMessage({
         ...message,
@@ -260,6 +267,7 @@ export class ChannelHub {
     }
 
     this.permissionBridge.cancelAll();
+    this.sudoWatcher?.stop();
 
     // Clear all typing indicator intervals
     for (const interval of this.typingIntervals.values()) {

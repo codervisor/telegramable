@@ -68,6 +68,11 @@ RUN chmod +x ./start.sh
 # has CLAUDE.md in its working directory with agent-specific context.
 COPY deploy/templates/ ./templates/
 
+# sudo wrapper — intercepts sudo calls and routes permission requests to Telegram.
+# Installed at /usr/local/bin/sudo which takes precedence over /usr/bin/sudo in PATH.
+COPY deploy/sudo-wrapper.sh /usr/local/bin/sudo
+RUN chmod +x /usr/local/bin/sudo && mkdir -p /tmp/telegramable-sudo && chown claude:claude /tmp/telegramable-sudo
+
 # Persistent data directory — mount a Railway Volume (or Docker volume) at /data.
 # Without a volume, all data (SQLite DBs, agent sessions, workspace files) is lost on redeploy.
 # See README.md "Railway" section for setup instructions.
