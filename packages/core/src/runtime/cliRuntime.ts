@@ -139,7 +139,14 @@ export class CliRuntime implements Runtime {
    * when concurrent executions mutate the shared in-process MemoryStore.
    */
   private prepareMcpConfig(executionId: string): { mcpDir: string; mcpConfigPath: string; stateFilePath: string; baseline: MemorySnapshot } | null {
-    if (!this.useAgentDrivenMemory || !this.memoryStore) return null;
+    if (!this.useAgentDrivenMemory) {
+      this.logger.debug("Agent-driven memory disabled, skipping MCP config.", { executionId, hasMemoryStore: !!this.memoryStore });
+      return null;
+    }
+    if (!this.memoryStore) {
+      this.logger.warn("Agent-driven memory enabled but memoryStore is missing, skipping MCP config.", { executionId });
+      return null;
+    }
 
     const stdioScript = this.resolveMemoryMcpStdioPath();
     if (!existsSync(stdioScript)) {
@@ -169,18 +176,21 @@ export class CliRuntime implements Runtime {
 
     writeSecure(stateFilePath, JSON.stringify(baseline, null, 2));
 
-    // Write MCP config pointing to the stdio script
+    // Write MCP config pointing to the stdio script.
+    // Use process.execPath for the absolute Node.js binary path — bare "node" may not
+    // resolve correctly when the Claude CLI spawns the MCP server subprocess, especially
+    // in Docker containers where PATH may differ between execution contexts.
     const mcpConfig = {
       mcpServers: {
         memory: {
-          command: "node",
+          command: process.execPath,
           args: [stdioScript, stateFilePath],
         },
       },
     };
     writeSecure(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
 
-    this.logger.debug("Prepared MCP config for CLI memory tools.", { mcpDir, executionId });
+    this.logger.info("Prepared MCP config for CLI memory tools.", { mcpDir, executionId, nodePath: process.execPath, stdioScript });
     return { mcpDir, mcpConfigPath, stateFilePath, baseline };
   }
 
@@ -494,7 +504,9 @@ export class CliRuntime implements Runtime {
         pid: child.pid,
         hasOAuthToken: !!process.env.CLAUDE_CODE_OAUTH_TOKEN,
         hasApiKey: !!process.env.ANTHROPIC_API_KEY,
-        cwd: this.config.workingDir || "(inherited)"
+        cwd: this.config.workingDir || "(inherited)",
+        memoryMcp: mcpFiles ? "attached" : "none",
+        mcpConfigPath: mcpFiles?.mcpConfigPath
       });
     });
   }

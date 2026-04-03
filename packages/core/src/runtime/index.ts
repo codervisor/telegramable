@@ -29,6 +29,8 @@ export const createRuntime = (agent: AgentConfig, logger: Logger, options?: Crea
   const canUseAgentDrivenMemory = (agent.runtime === "session-claude-sdk" || !agent.runtime || agent.runtime === "cli")
     && !!(memoryStore && memorySync);
 
+  logger.info("Runtime memory config.", { agent: agent.name, runtime: agent.runtime || "cli", canUseAgentDrivenMemory, hasMemoryStore: !!memoryStore, hasMemorySync: !!memorySync });
+
   const getSystemPromptSuffix = memoryStore
     ? () => buildMemoryPrompt(memoryStore.all(), canUseAgentDrivenMemory)
     : undefined;

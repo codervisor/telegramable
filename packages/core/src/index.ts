@@ -46,6 +46,8 @@ export async function startDaemon(): Promise<void> {
   let memoryExtractor: MemoryExtractor | undefined;
   let memoryChannelInfo: MemoryChannelInfo | undefined;
 
+  logger.info("Memory configuration.", { enabled: !!config.memory?.enabled, hasChatId: !!config.memory?.chatId, hasExtraction: !!config.memory?.extraction });
+
   if (config.memory?.enabled) {
     // We need a Bot instance for MemorySync — get the token from the first Telegram channel
     const telegramChannel = config.channels.find((ch) => ch.type === "telegram");
@@ -113,6 +115,7 @@ export async function startDaemon(): Promise<void> {
     }
   }
 
+  logger.info("Creating agent registry.", { hasMemoryStore: !!memoryStore, hasMemorySync: !!memorySync, hasMemoryExtractor: !!memoryExtractor });
   const registry = createAgentRegistry(config, logger, memoryStore, memorySync, memoryExtractor);
 
   const adapters = config.channels.map((channel) => createAdapter(channel, logger));
