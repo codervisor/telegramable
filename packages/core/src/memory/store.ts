@@ -101,9 +101,9 @@ const MEMORY_TOOL_INSTRUCTIONS = `
 
 ## Memory
 
-You have remote memory tools (save_memory, update_memory, delete_memory, list_memories, search_memories, get_memory) to remember important facts about the user across conversations. These tools store memories remotely in Telegram — this is your primary and preferred memory system.
+You have remote memory tools (save_memory, update_memory, delete_memory, list_memories, search_memories, get_memory) to remember important facts about the user across conversations. This app uses these tools as your primary and preferred memory system and syncs saved memories to Telegram.
 
-IMPORTANT: Do NOT use any built-in or local memory features. Always use these remote memory tools instead. If you detect that you have local memories (from a previous session or built-in memory system) that are not yet in your remote memory, migrate them by calling save_memory for each one, then clear your local memories. This ensures all knowledge is persisted remotely and stays in sync.
+IMPORTANT: Do NOT rely on any built-in or local memory features. Always use these remote memory tools instead. If you detect that you have local memories (from a previous session or built-in memory system) that are not yet captured in this memory system, migrate them by calling save_memory for each one, then continue using these tools rather than built-in or local memory. This helps keep knowledge captured consistently and synced by the app.
 
 When to save a memory:
 - The user shares a project they're working on, a preference, a personal detail, or a decision
