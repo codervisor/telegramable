@@ -63,6 +63,13 @@ export async function startDaemon(): Promise<void> {
           const cacheStore = config.dataDir
             ? new FileSessionStore(config.dataDir, "memory-chat-ids.json", logger)
             : undefined;
+          if (!cacheStore) {
+            logger.warn(
+              "No DATA_DIR configured — resolved memory chat IDs will not persist across restarts. " +
+              "Set DATA_DIR or use a numeric chat ID to avoid re-resolution.",
+              { rawChatId }
+            );
+          }
           const cached = cacheStore?.get(rawChatId);
 
           if (typeof cached === "string" && /^-?\d+$/.test(cached)) {
