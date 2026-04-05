@@ -233,3 +233,72 @@ test("SudoWatcher ignores permission-response for unknown request IDs", async ()
   watcher.stop();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("SudoWatcher polling fallback detects .req files when fs.watch misses them", async () => {
+  const dir = makeTempDir();
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const watcher = new SudoWatcher(dir, eventBus, logger);
+
+  const events: ExecutionEvent[] = [];
+  eventBus.on((event) => {
+    if (event.type === "permission-request") {
+      events.push(event);
+    }
+  });
+
+  watcher.start();
+
+  // Manually close the fs.watch to simulate it being unavailable,
+  // then write a .req file — only the poll should detect it.
+  (watcher as unknown as { watcher?: { close: () => void } }).watcher?.close();
+  (watcher as unknown as { watcher?: unknown }).watcher = undefined;
+
+  writeReqFile(dir, {
+    id: "poll-only-req",
+    command: "apt-get install -y vim",
+    channelId: "telegram",
+    chatId: "chat-poll"
+  });
+
+  // Wait for at least one poll cycle (2s interval + margin)
+  await sleep(2500);
+
+  assert.equal(events.length, 1, "Polling should detect the .req file");
+  assert.equal(events[0].payload?.permissionRequestId, "poll-only-req");
+
+  watcher.stop();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("SudoWatcher deduplicates between fs.watch and polling", async () => {
+  const dir = makeTempDir();
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const watcher = new SudoWatcher(dir, eventBus, logger);
+
+  const events: ExecutionEvent[] = [];
+  eventBus.on((event) => {
+    if (event.type === "permission-request") {
+      events.push(event);
+    }
+  });
+
+  watcher.start();
+
+  writeReqFile(dir, {
+    id: "dedup-req",
+    command: "apt-get install -y htop",
+    channelId: "telegram",
+    chatId: "chat-dedup"
+  });
+
+  // Wait for fs.watch to fire, then wait past a poll cycle
+  await sleep(2500);
+
+  assert.equal(events.length, 1, "Should emit exactly one event despite fs.watch + polling");
+  assert.equal(events[0].payload?.permissionRequestId, "dedup-req");
+
+  watcher.stop();
+  rmSync(dir, { recursive: true, force: true });
+});

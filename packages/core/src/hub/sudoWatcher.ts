@@ -1,6 +1,6 @@
 import { watch, existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from "fs";
 import type { FSWatcher } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { EventBus } from "../events/eventBus";
 import { ExecutionEvent } from "../events/types";
 import { Logger } from "../logging";
@@ -47,7 +47,7 @@ export class SudoWatcher {
     // because fs.watch behavior is platform-dependent (Linux may emit "change"
     // for renames in some configurations, especially inside Docker).
     try {
-      this.watcher = watch(this.watchDir, (eventType, filename) => {
+      this.watcher = watch(this.watchDir, { encoding: "utf8" }, (eventType, filename) => {
         if (filename && filename.endsWith(".req")) {
           const reqPath = join(this.watchDir, filename);
           // Small delay to ensure the atomic rename has settled
@@ -119,7 +119,7 @@ export class SudoWatcher {
   }
 
   private processRequest(reqPath: string): void {
-    const filename = reqPath.split("/").pop() || "";
+    const filename = basename(reqPath);
     // Skip if already seen (dedup between fs.watch and polling)
     if (this.seen.has(filename)) return;
     this.seen.add(filename);
