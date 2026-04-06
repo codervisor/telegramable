@@ -119,6 +119,13 @@ export class CliRuntime implements Runtime {
       args.push("--output-format", this.config.outputFormat);
     }
 
+    // When using stream-json, we need --verbose and --include-partial-messages
+    // so the CLI emits streaming events (tool_use, text_delta, etc.) rather
+    // than just the final result.
+    if (this.config.outputFormat === "stream-json") {
+      args.push("--verbose", "--include-partial-messages");
+    }
+
     if (this.config.bare) {
       args.push("--bare");
     }
@@ -422,19 +429,51 @@ export class CliRuntime implements Runtime {
         }
       });
 
+      // When using stream-json, we need to buffer partial lines because
+      // chunks may split across JSON line boundaries.
+      let ndjsonBuffer = "";
+
       child.stdout?.on("data", (chunk: Buffer) => {
         receivedAnyOutput = true;
         resetTimeout(); // Reset inactivity timeout on output
         const text = chunk.toString();
         stdoutChunks.push(text);
-        eventBus.emit({
-          executionId,
-          channelId: message.channelId,
-          chatId: message.chatId,
-          type: "stream-text",
-          timestamp: Date.now(),
-          payload: { text }
-        });
+
+        if (this.config.outputFormat === "stream-json") {
+          // Parse NDJSON: buffer incoming text, process complete lines
+          ndjsonBuffer += text;
+          const lines = ndjsonBuffer.split("\n");
+          // Keep the last (potentially incomplete) line in the buffer
+          ndjsonBuffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const parsed = JSON.parse(trimmed);
+              this.handleStreamJsonEvent(parsed, executionId, message, eventBus);
+            } catch {
+              // Not valid JSON — emit as raw text (e.g. startup messages)
+              eventBus.emit({
+                executionId,
+                channelId: message.channelId,
+                chatId: message.chatId,
+                type: "stream-text",
+                timestamp: Date.now(),
+                payload: { text: trimmed }
+              });
+            }
+          }
+        } else {
+          eventBus.emit({
+            executionId,
+            channelId: message.channelId,
+            chatId: message.chatId,
+            type: "stream-text",
+            timestamp: Date.now(),
+            payload: { text }
+          });
+        }
       });
 
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -528,7 +567,17 @@ export class CliRuntime implements Runtime {
           }
         }
 
-        const response = stdoutChunks.join("").trim();
+        const rawOutput = stdoutChunks.join("").trim();
+
+        // When using stream-json, extract the text result from the NDJSON output.
+        // The raw stdout is NDJSON lines, not the actual response text.
+        let response: string;
+        if (this.config.outputFormat === "stream-json") {
+          response = this.extractResultFromStreamJson(rawOutput);
+        } else {
+          response = rawOutput;
+        }
+
         if (!response && code === 0) {
           this.logger.warn("CLI runtime exited successfully but produced no stdout output.", { executionId });
         }
@@ -568,6 +617,143 @@ export class CliRuntime implements Runtime {
         mcpConfigPath: mcpFiles?.mcpConfigPath
       });
     });
+  }
+
+  /**
+   * Extract the final text result from stream-json NDJSON output.
+   * Looks for the "result" line which contains the final response text,
+   * or falls back to accumulating text from assistant message content blocks.
+   */
+  private extractResultFromStreamJson(rawOutput: string): string {
+    const lines = rawOutput.split("\n");
+    // Try to find a "result" message which contains the final text
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.type === "result" && typeof parsed.result === "string") {
+          return parsed.result;
+        }
+      } catch {
+        // skip non-JSON lines
+      }
+    }
+    // Fallback: accumulate text from assistant messages
+    const texts: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.type === "assistant") {
+          const content = parsed.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === "text" && typeof block.text === "string") {
+                texts.push(block.text);
+              }
+            }
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+    return texts.join("\n");
+  }
+
+  /**
+   * Process a parsed NDJSON event from `--output-format stream-json`.
+   *
+   * Claude Code CLI emits wrapper objects like:
+   *   { type: "stream_event", event: { type: "content_block_start", content_block: { type: "tool_use", name: "Read", ... } } }
+   *   { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "..." } } }
+   *   { type: "assistant", message: { ... } }   — complete assistant turn
+   *   { type: "result", ... }                    — final result
+   */
+  private handleStreamJsonEvent(
+    parsed: Record<string, unknown>,
+    executionId: string,
+    message: IMMessage,
+    eventBus: EventBus,
+  ): void {
+    const type = parsed.type as string | undefined;
+
+    if (type === "stream_event") {
+      const event = parsed.event as Record<string, unknown> | undefined;
+      if (!event) return;
+      const eventType = event.type as string | undefined;
+
+      if (eventType === "content_block_start") {
+        const block = event.content_block as Record<string, unknown> | undefined;
+        if (block?.type === "tool_use") {
+          // Emit tool-use event so the hub can display tool activity
+          eventBus.emit({
+            executionId,
+            channelId: message.channelId,
+            chatId: message.chatId,
+            type: "tool-use",
+            timestamp: Date.now(),
+            payload: {
+              toolName: block.name as string,
+              toolInput: block.input as Record<string, unknown> | undefined,
+            }
+          });
+        }
+      } else if (eventType === "content_block_delta") {
+        const delta = event.delta as Record<string, unknown> | undefined;
+        if (delta?.type === "text_delta") {
+          const text = delta.text as string;
+          if (text) {
+            eventBus.emit({
+              executionId,
+              channelId: message.channelId,
+              chatId: message.chatId,
+              type: "stream-text",
+              timestamp: Date.now(),
+              payload: { text }
+            });
+          }
+        }
+        // input_json_delta events are ignored — the hub doesn't need streaming tool input
+      }
+      // Other stream events (message_start, message_stop, etc.) are ignored
+      return;
+    }
+
+    // "assistant" messages contain the complete turn — extract text if we
+    // haven't already streamed it via deltas (fallback for non-partial mode).
+    if (type === "assistant") {
+      const msg = parsed.message as Record<string, unknown> | undefined;
+      const content = msg?.content as Array<Record<string, unknown>> | undefined;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "tool_use") {
+            eventBus.emit({
+              executionId,
+              channelId: message.channelId,
+              chatId: message.chatId,
+              type: "tool-use",
+              timestamp: Date.now(),
+              payload: {
+                toolName: block.name as string,
+                toolInput: block.input as Record<string, unknown> | undefined,
+              }
+            });
+          }
+          // Text blocks from complete assistant messages are not emitted here
+          // to avoid duplication with stream_event text_delta already sent.
+        }
+      }
+      return;
+    }
+
+    // "result" type is handled by the close event — ignore here.
+    // "system" events (api_retry, etc.) are logged but not forwarded.
+    if (type === "system") {
+      this.logger.info("CLI stream-json system event.", { executionId, subtype: (parsed as Record<string, unknown>).subtype });
+    }
   }
 
   private async extractMemory(userText: string, response: string): Promise<void> {
