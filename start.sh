@@ -79,6 +79,20 @@ if [ -d "$TEMPLATES_DIR" ]; then
   done
 fi
 
+# ── Seed Claude Code settings.json ────────────────────────────────────────
+# Allow memory MCP tools without permission prompts (needed when permission
+# mode falls back to "auto", e.g. running as root).  Existing user
+# customizations on the volume are preserved.
+SETTINGS_TEMPLATE="$TEMPLATES_DIR/claude-settings.json"
+SETTINGS_TARGET="$CLAUDE_HOME/settings.json"
+if [ -f "$SETTINGS_TEMPLATE" ] && [ ! -e "$SETTINGS_TARGET" ]; then
+  if cp "$SETTINGS_TEMPLATE" "$SETTINGS_TARGET"; then
+    echo "[telegramable] Seeded $SETTINGS_TARGET from template"
+  else
+    echo "[telegramable] Warning: failed to seed $SETTINGS_TARGET" >&2
+  fi
+fi
+
 # Start web server
 node /app/web/apps/web/server.js &
 WEB_PID=$!
