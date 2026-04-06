@@ -180,7 +180,9 @@ const parseAgents = (): AgentConfig[] => {
     return [];
   }
 
-  const timeoutMs = Number(process.env.RUNTIME_TIMEOUT_MS || 10 * 60 * 1000);
+  const timeoutMs = process.env.RUNTIME_TIMEOUT_MS !== undefined
+    ? Number(process.env.RUNTIME_TIMEOUT_MS)
+    : 10 * 60 * 1000;
   const maxTurns = process.env.MAX_TURNS ? Number(process.env.MAX_TURNS) : undefined;
   const maxBudgetUsd = process.env.MAX_BUDGET_USD ? Number(process.env.MAX_BUDGET_USD) : undefined;
 
