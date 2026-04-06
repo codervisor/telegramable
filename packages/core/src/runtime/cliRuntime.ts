@@ -404,6 +404,20 @@ export class CliRuntime implements Runtime {
       };
       resetTimeout();
 
+      // Subscribe to permission events so the timeout resets while waiting
+      // for the user to approve/deny sudo requests via Telegram.  The child
+      // process produces no stdout/stderr during that wait, so without this
+      // the inactivity timeout would fire and kill a legitimately active run.
+      const unsubPermission = eventBus.on((event) => {
+        if (
+          (event.type === "permission-request" || event.type === "permission-response") &&
+          event.channelId === message.channelId &&
+          event.chatId === message.chatId
+        ) {
+          resetTimeout();
+        }
+      });
+
       child.stdout?.on("data", (chunk: Buffer) => {
         receivedAnyOutput = true;
         resetTimeout(); // Reset inactivity timeout on output
@@ -438,6 +452,7 @@ export class CliRuntime implements Runtime {
       child.on("error", (error: NodeJS.ErrnoException) => {
         clearTimeout(timeout);
         clearInterval(heartbeat);
+        unsubPermission();
         if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
         let reason = error.message;
         if (error.code === "ENOENT") {
@@ -460,6 +475,7 @@ export class CliRuntime implements Runtime {
       child.on("close", (code: number | null) => {
         clearTimeout(timeout);
         clearInterval(heartbeat);
+        unsubPermission();
 
         const stderr = stderrChunks.join("").trim();
 
