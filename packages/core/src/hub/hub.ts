@@ -989,7 +989,7 @@ export class ChannelHub {
         }
       }
       const parts = deduped.map((d) => d.count > 1 ? `${d.name} x${d.count}` : d.name);
-      const summary = `✅ <i>${activity.tools.length} steps: ${escapeHtml(parts.join(" → "))}</i>`;
+      const summary = `📋 <i>${activity.tools.length} steps: ${escapeHtml(parts.join(" → "))}</i>`;
       await adapter.editMessage(chatId, activity.messageId, summary).catch(() => {});
     } else if (activity.promoted && activity.messageId && adapter.deleteMessage) {
       // If we can't edit (no tools recorded), just delete
@@ -1329,7 +1329,7 @@ export class ChannelHub {
         }
         const lastLine = record.outputLines[record.outputLines.length - 1];
         if (lastLine) {
-          lines.push(`\nLast output: ${truncate(lastLine, 200)}`);
+          lines.push(`\nLast output: ${escapeHtml(truncate(lastLine, 200))}`);
         }
         await adapter.sendMessage(message.chatId, lines.join("\n"));
         return;
@@ -1341,7 +1341,7 @@ export class ChannelHub {
         return;
       }
 
-      lines.push(`Reason: ${record.errorReason || "unknown"}`);
+      lines.push(`Reason: ${escapeHtml(record.errorReason || "unknown")}`);
       await adapter.sendMessage(message.chatId, lines.join("\n"));
       return;
     }

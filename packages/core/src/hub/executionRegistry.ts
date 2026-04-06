@@ -104,7 +104,15 @@ export class InMemoryExecutionRegistry implements ExecutionRegistry {
     if (!record) {
       return;
     }
-    record.toolUses.push({ name, input, timestamp: this.now() });
+    record.toolUses.push({
+      name,
+      input: input ? { ...input } : undefined,
+      timestamp: this.now()
+    });
+
+    if (record.toolUses.length > this.maxLines) {
+      record.toolUses.splice(0, record.toolUses.length - this.maxLines);
+    }
   }
 
   complete(executionId: string, finishedAt: number): void {

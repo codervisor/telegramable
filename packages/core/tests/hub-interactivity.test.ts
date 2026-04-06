@@ -165,3 +165,102 @@ test("ChannelHub prepends replyToText context to routed message", async () => {
 
   await hub.stop();
 });
+
+test("ChannelHub sends execution summary with tool count on completion", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      const base = { executionId, channelId: message.channelId, chatId: message.chatId };
+
+      bus.emit({ ...base, type: "start", timestamp: 1000, payload: { agentName: "claude" } });
+
+      // Emit tool-use events
+      bus.emit({ ...base, type: "tool-use", timestamp: 1500, payload: { toolName: "Read", toolInput: { file_path: "/a.ts" } } });
+      bus.emit({ ...base, type: "tool-use", timestamp: 2000, payload: { toolName: "Edit", toolInput: { file_path: "/a.ts" } } });
+      bus.emit({ ...base, type: "tool-use", timestamp: 2500, payload: { toolName: "Bash", toolInput: { command: "npm test" } } });
+
+      // Complete after 6 seconds (above the 5s threshold)
+      bus.emit({ ...base, type: "complete", timestamp: 7000, payload: { response: "done" } });
+    }
+  };
+
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  await adapter.simulateIncoming({ channelId: "telegram", chatId: "chat-1", text: "do work" });
+  await sleep(50);
+
+  // Should have a summary message with tool count
+  const allMessages = [...adapter.sentMessages, ...adapter.sentMarkupMessages];
+  const summaryMsg = allMessages.find((m) => m.text.includes("tools used"));
+  assert.ok(summaryMsg, "should send execution summary with tool count");
+  assert.ok(summaryMsg!.text.includes("3 tools used"), "should report 3 tools");
+  assert.ok(summaryMsg!.text.includes("✅"), "should use success icon for complete status");
+
+  await hub.stop();
+});
+
+test("ChannelHub suppresses execution summary for quick runs with no tools", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      const base = { executionId, channelId: message.channelId, chatId: message.chatId };
+      const now = Date.now();
+
+      bus.emit({ ...base, type: "start", timestamp: now, payload: { agentName: "claude" } });
+      // Complete quickly (under 5s) with no tools
+      bus.emit({ ...base, type: "complete", timestamp: now + 1000, payload: { response: "quick reply" } });
+    }
+  };
+
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  await adapter.simulateIncoming({ channelId: "telegram", chatId: "chat-1", text: "hi" });
+  await sleep(50);
+
+  // Should NOT have a summary message for quick no-tool runs
+  const allMessages = [...adapter.sentMessages, ...adapter.sentMarkupMessages];
+  const summaryMsg = allMessages.find((m) => m.text.includes("tools used"));
+  assert.equal(summaryMsg, undefined, "should not send summary for quick runs with no tools");
+
+  await hub.stop();
+});
+
+test("ChannelHub sends error icon in execution summary on failure", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      const base = { executionId, channelId: message.channelId, chatId: message.chatId };
+
+      bus.emit({ ...base, type: "start", timestamp: 1000, payload: { agentName: "claude" } });
+      bus.emit({ ...base, type: "tool-use", timestamp: 1500, payload: { toolName: "Bash", toolInput: { command: "npm test" } } });
+      bus.emit({ ...base, type: "error", timestamp: 8000, payload: { reason: "Runtime timeout." } });
+    }
+  };
+
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  await adapter.simulateIncoming({ channelId: "telegram", chatId: "chat-1", text: "do work" });
+  await sleep(50);
+
+  const allMessages = [...adapter.sentMessages, ...adapter.sentMarkupMessages];
+  const summaryMsg = allMessages.find((m) => m.text.includes("tools used") || m.text.includes("1 tool used"));
+  assert.ok(summaryMsg, "should send execution summary on error");
+  assert.ok(summaryMsg!.text.includes("❌"), "should use error icon for failed execution");
+
+  await hub.stop();
+});
