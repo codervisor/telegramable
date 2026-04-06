@@ -780,18 +780,12 @@ export class ChannelHub {
       // Flush stream draft and check if we already streamed the response
       const flushedContent = await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
 
-      // Close forum topic on completion
-      if (topicId && adapter.closeForumTopic) {
-        adapter.closeForumTopic(event.chatId, topicId).catch(() => {
-          // Non-critical
-        });
-        this.topicMap.delete(`${event.channelId}:${event.chatId}:${event.executionId}`);
-      }
-
       // Skip sending duplicate response if we already streamed it in-place
       if (flushedContent && event.type === "complete") {
         // Still send execution summary even for streamed responses
         await this.sendExecutionSummary(adapter, event, topicId);
+        // Close forum topic after all messages are sent
+        this.closeForumTopicIfNeeded(adapter, event, topicId);
         return;
       }
     }
@@ -807,6 +801,8 @@ export class ChannelHub {
     // Send execution summary after the response
     if (event.type === "complete" || event.type === "error") {
       await this.sendExecutionSummary(adapter, event, topicId);
+      // Close forum topic after all messages are sent
+      this.closeForumTopicIfNeeded(adapter, event, topicId);
     }
   }
 
@@ -833,6 +829,16 @@ export class ChannelHub {
       await adapter.sendMessageWithMarkup(event.chatId, parts.join(""), undefined, { threadId: topicId });
     } else {
       await adapter.sendMessage(event.chatId, parts.join(""));
+    }
+  }
+
+  /** Close forum topic after all messages have been sent. Fire-and-forget. */
+  private closeForumTopicIfNeeded(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): void {
+    if (topicId && adapter.closeForumTopic) {
+      adapter.closeForumTopic(event.chatId, topicId).catch(() => {
+        // Non-critical
+      });
+      this.topicMap.delete(`${event.channelId}:${event.chatId}:${event.executionId}`);
     }
   }
 
@@ -912,6 +918,10 @@ export class ChannelHub {
     activity.tools.push({ name: toolName, input: toolInput });
 
     if (activity.promoted) {
+      // Wait for any in-flight initial send so messageId is set before editing
+      if (activity.sendingPromise) {
+        await activity.sendingPromise;
+      }
       // Already visible — edit in-place immediately
       await this.sendOrEditToolActivity(adapter, event.chatId, activity, topicId);
     } else if (!activity.promotionTimer) {

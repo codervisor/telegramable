@@ -264,3 +264,96 @@ test("ChannelHub sends error icon in execution summary on failure", async () => 
 
   await hub.stop();
 });
+
+test("ChannelHub finalizes tool activity even when promotion send is in-flight", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+
+  // Make sendMessageWithMarkup resolve slowly to simulate in-flight send
+  let resolveSend: (() => void) | undefined;
+  const originalSendMarkup = adapter.sendMessageWithMarkup.bind(adapter);
+  adapter.sendMessageWithMarkup = async (chatId: string, text: string, markup: unknown, options?: { threadId?: number }) => {
+    // Only delay tool activity messages (the "Working" ones)
+    if (text.includes("Working")) {
+      await new Promise<void>((resolve) => { resolveSend = resolve; });
+    }
+    return originalSendMarkup(chatId, text, markup, options);
+  };
+
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      const base = { executionId, channelId: message.channelId, chatId: message.chatId };
+
+      bus.emit({ ...base, type: "start", timestamp: 1000, payload: { agentName: "claude" } });
+      bus.emit({ ...base, type: "tool-use", timestamp: 1500, payload: { toolName: "Read", toolInput: { file_path: "/a.ts" } } });
+
+      // Wait for the promotion timer to fire (1.5s)
+      await sleep(1600);
+
+      // Now complete while the send is still in-flight
+      bus.emit({ ...base, type: "complete", timestamp: 8000, payload: { response: "done" } });
+    }
+  };
+
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  await adapter.simulateIncoming({ channelId: "telegram", chatId: "chat-1", text: "do work" });
+
+  // Wait for timer to fire and start the send
+  await sleep(1700);
+
+  // The send should be blocked. Now resolve it so finalizeToolActivity can proceed.
+  assert.ok(resolveSend, "sendMessageWithMarkup should have been called for the Working message");
+  resolveSend!();
+
+  // Wait for finalization to complete
+  await sleep(100);
+
+  // The activity message should have been edited into a summary (not left as "Working")
+  const edited = adapter.editedMessages.find((m) => m.text.includes("📋"));
+  assert.ok(edited, "should edit the Working message into a compact summary after awaiting in-flight send");
+
+  await hub.stop();
+});
+
+test("ChannelHub sends execution summary to forum topic thread", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+  adapter.forumTopicsEnabled = true;
+
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      const base = { executionId, channelId: message.channelId, chatId: message.chatId };
+
+      bus.emit({ ...base, type: "start", timestamp: 1000, payload: { agentName: "claude" } });
+      bus.emit({ ...base, type: "tool-use", timestamp: 1500, payload: { toolName: "Read", toolInput: { file_path: "/a.ts" } } });
+      bus.emit({ ...base, type: "tool-use", timestamp: 2000, payload: { toolName: "Edit", toolInput: { file_path: "/a.ts" } } });
+      bus.emit({ ...base, type: "complete", timestamp: 7000, payload: { response: "done" } });
+    }
+  };
+
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  await adapter.simulateIncoming({ channelId: "telegram", chatId: "chat-1", text: "do work" });
+  await sleep(50);
+
+  // Execution summary should be sent via sendMessageWithMarkup with threadId
+  const summaryMsg = adapter.sentMarkupMessages.find((m) => m.text.includes("tools used"));
+  assert.ok(summaryMsg, "should send execution summary via sendMessageWithMarkup");
+  assert.ok(summaryMsg!.options?.threadId, "execution summary should include threadId for forum topic");
+
+  // Summary should NOT appear in plain sentMessages (no topic routing)
+  const plainSummary = adapter.sentMessages.find((m) => m.text.includes("tools used"));
+  assert.equal(plainSummary, undefined, "should not send summary via plain sendMessage when topic exists");
+
+  // Forum topic should be closed after the summary
+  assert.ok(adapter.closedTopics.length > 0, "should close forum topic after sending summary");
+
+  await hub.stop();
+});
