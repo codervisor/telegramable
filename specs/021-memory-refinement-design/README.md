@@ -14,7 +14,6 @@ transitions:
 - status: planned
   at: 2026-04-06T08:47:59.214113728Z
 ---
-
 # Memory Refinement — Knowledge Graph via External Provider
 
 ## Overview
@@ -110,3 +109,6 @@ No Haiku extraction needed when using Mem0 — Mem0's built-in pipeline handles 
 - **Privacy**: Mem0 SaaS stores data on their infra. Self-hosted mode available for sensitive deployments.
 - **Cost**: Free tier supports 1,000 memories — sufficient for personal use.
 - **Future**: Refinement/knowledge graph/dream consolidation will be a separate spec building on top of this storage layer.
+
+- **Next priority: Memory refinement/dream cycle.** Current system has no compaction — facts accumulate without consolidation. Need a periodic `refine()` pass (like Claude Code's AutoDream) that: (1) reads all facts, (2) merges related ones, (3) removes stale/contradicted, (4) rebalances. Triggers: time-based (24h), threshold-based (fact count), or on-demand (`/memory refine`). This is the critical missing piece before scaling beyond ~50 facts.
+- **Semantic retrieval for large fact sets.** When fact count exceeds system prompt budget, switch from `all()` to `semanticSearch(query)` for prompt injection. `Mem0MemoryProvider.semanticSearch()` already implemented but not wired into the prompt builder yet.
