@@ -86,6 +86,7 @@ fi
 SETTINGS_TEMPLATE="$TEMPLATES_DIR/claude-settings.json"
 SETTINGS_TARGET="$CLAUDE_HOME/settings.json"
 if [ -f "$SETTINGS_TEMPLATE" ] && [ ! -e "$SETTINGS_TARGET" ]; then
+  mkdir -p "$(dirname "$SETTINGS_TARGET")"
   if cp "$SETTINGS_TEMPLATE" "$SETTINGS_TARGET"; then
     echo "[telegramable] Seeded $SETTINGS_TARGET from template"
   else
