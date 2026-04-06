@@ -229,7 +229,7 @@ export class ChannelHub {
   private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
   private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
-  private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean }>(); // tool activity tracking
+  private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean; sendingPromise?: Promise<void> }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private readonly reactionMessageIds = new Map<string, number>(); // executionId → source messageId for clearing reactions
   private unsubscribeEvents?: () => void;
@@ -791,7 +791,7 @@ export class ChannelHub {
       // Skip sending duplicate response if we already streamed it in-place
       if (flushedContent && event.type === "complete") {
         // Still send execution summary even for streamed responses
-        await this.sendExecutionSummary(adapter, event);
+        await this.sendExecutionSummary(adapter, event, topicId);
         return;
       }
     }
@@ -806,12 +806,12 @@ export class ChannelHub {
 
     // Send execution summary after the response
     if (event.type === "complete" || event.type === "error") {
-      await this.sendExecutionSummary(adapter, event);
+      await this.sendExecutionSummary(adapter, event, topicId);
     }
   }
 
   /** Send a compact execution summary (duration, tool count) after completion. */
-  private async sendExecutionSummary(adapter: IMAdapter, event: ExecutionEvent): Promise<void> {
+  private async sendExecutionSummary(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
     const record = this.executionRegistry.get(event.executionId);
     if (!record) return;
 
@@ -829,7 +829,11 @@ export class ChannelHub {
     }
     parts[0] += "</i>";
 
-    await adapter.sendMessage(event.chatId, parts.join(""));
+    if (topicId && adapter.sendMessageWithMarkup) {
+      await adapter.sendMessageWithMarkup(event.chatId, parts.join(""), undefined, { threadId: topicId });
+    } else {
+      await adapter.sendMessage(event.chatId, parts.join(""));
+    }
   }
 
   private async forwardPermissionRequest(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
@@ -917,7 +921,10 @@ export class ChannelHub {
         if (!current) return; // cleared before timer fired
         current.promoted = true;
         current.promotionTimer = undefined;
-        void this.sendOrEditToolActivity(adapter, event.chatId, current, topicId);
+        // Track the in-flight send so finalizeToolActivity can await it
+        current.sendingPromise = this.sendOrEditToolActivity(adapter, event.chatId, current, topicId)
+          .catch(() => { /* non-critical — message send may fail */ })
+          .finally(() => { current.sendingPromise = undefined; });
       }, ChannelHub.TOOL_ACTIVITY_PROMOTION_MS);
     }
     // Otherwise: timer already running, tools are being accumulated — nothing to do yet
@@ -942,7 +949,7 @@ export class ChannelHub {
     }
 
     const header = total > maxVisible
-      ? `⚙️ <b>Working</b> <i>(${total} steps)</i>`
+      ? `⚙️ <b>Working</b> <i>(showing last ${maxVisible} of ${total} steps)</i>`
       : total > 1
         ? `⚙️ <b>Working</b> <i>(${total} steps)</i>`
         : `⚙️ <b>Working</b>`;
@@ -973,6 +980,12 @@ export class ChannelHub {
 
     if (activity.promotionTimer) {
       clearTimeout(activity.promotionTimer);
+    }
+
+    // Wait for any in-flight send from the promotion timer to complete
+    // so that messageId is available for editing/deleting
+    if (activity.sendingPromise) {
+      await activity.sendingPromise;
     }
 
     // If the message was sent to Telegram, edit it into a compact summary
