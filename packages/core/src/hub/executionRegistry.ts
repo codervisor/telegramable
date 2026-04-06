@@ -1,5 +1,11 @@
 import { stripAnsi } from "../runtime/session/utils";
 
+export interface ToolUseRecord {
+  name: string;
+  input?: Record<string, unknown>;
+  timestamp: number;
+}
+
 export interface ExecutionRecord {
   executionId: string;
   channelId: string;
@@ -10,6 +16,8 @@ export interface ExecutionRecord {
   finishedAt?: number;
   outputLines: string[];
   errorReason?: string;
+  /** Tool calls made during this execution, in chronological order. */
+  toolUses: ToolUseRecord[];
 }
 
 export interface ExecutionRegistry {
@@ -21,6 +29,7 @@ export interface ExecutionRegistry {
     startedAt: number;
   }): void;
   append(executionId: string, text: string): void;
+  trackToolUse(executionId: string, name: string, input?: Record<string, unknown>): void;
   complete(executionId: string, finishedAt: number): void;
   error(executionId: string, reason: string, finishedAt: number): void;
   get(executionId: string): ExecutionRecord | undefined;
@@ -63,7 +72,8 @@ export class InMemoryExecutionRegistry implements ExecutionRegistry {
       agentName: params.agentName,
       status: "running",
       startedAt: params.startedAt,
-      outputLines: []
+      outputLines: [],
+      toolUses: []
     });
   }
 
@@ -87,6 +97,14 @@ export class InMemoryExecutionRegistry implements ExecutionRegistry {
     if (record.outputLines.length > this.maxLines) {
       record.outputLines.splice(0, record.outputLines.length - this.maxLines);
     }
+  }
+
+  trackToolUse(executionId: string, name: string, input?: Record<string, unknown>): void {
+    const record = this.records.get(executionId);
+    if (!record) {
+      return;
+    }
+    record.toolUses.push({ name, input, timestamp: this.now() });
   }
 
   complete(executionId: string, finishedAt: number): void {

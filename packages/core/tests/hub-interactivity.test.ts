@@ -102,9 +102,9 @@ test("ChannelHub supports /status /logs /list without routing to runtime", async
 
   await sleep(30);
 
-  assert.ok(adapter.sentMessages.some((message) => message.text.includes("✅ Complete")));
+  assert.ok(adapter.sentMessages.some((message) => message.text.includes("✅") && message.text.includes("Complete")));
   assert.ok(adapter.sentMessages.some((message) => message.text.includes("[stdout] Analyzing project structure...")));
-  assert.ok(adapter.sentMessages.some((message) => message.text.includes("Recent executions (this chat):")));
+  assert.ok(adapter.sentMessages.some((message) => message.text.includes("Recent executions")));
   assert.ok(adapter.sentMessages.some((message) => message.text.includes("Unknown execution ID: unknown-id")));
 
   await hub.stop();

@@ -148,6 +148,18 @@ const PERMISSION_CALLBACK_PREFIX = "perm:";
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** Format a duration in milliseconds to a human-readable string. */
+const formatDuration = (ms: number): string => {
+  const totalSeconds = Math.floor(ms / 1_000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+};
+
 /** Format a human-readable tool activity description (like Claude Code mobile). */
 const formatToolDescription = (toolName: string, toolInput?: Record<string, unknown>): string => {
   if (!toolInput) return `<b>${escapeHtml(toolName)}</b>`;
@@ -657,6 +669,13 @@ export class ChannelHub {
         this.executionRegistry.append(event.executionId, `${label} ${text}`);
         break;
       }
+      case "tool-use":
+        this.executionRegistry.trackToolUse(
+          event.executionId,
+          event.payload?.toolName || "unknown",
+          event.payload?.toolInput
+        );
+        break;
       case "complete":
         this.executionRegistry.complete(event.executionId, event.timestamp);
         break;
@@ -737,8 +756,8 @@ export class ChannelHub {
     if (event.type === "stream-text") {
       // Stop typing indicator once we start streaming actual text
       this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
-      // Clear tool activity message — text is now streaming
-      this.clearToolActivity(event.channelId, event.chatId, event.executionId);
+      // Finalize tool activity message into a compact summary
+      await this.finalizeToolActivity(adapter, event.channelId, event.chatId, event.executionId);
       await this.forwardStreamText(adapter, event, topicId);
       return;
     }
@@ -746,7 +765,7 @@ export class ChannelHub {
     if (event.type === "complete" || event.type === "error") {
       // Always stop typing indicator on completion
       this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
-      this.clearToolActivity(event.channelId, event.chatId, event.executionId);
+      await this.finalizeToolActivity(adapter, event.channelId, event.chatId, event.executionId);
       await this.flushAndDeleteThrottler(event.channelId, event.chatId);
 
       // Clear reaction on the source message
@@ -771,6 +790,8 @@ export class ChannelHub {
 
       // Skip sending duplicate response if we already streamed it in-place
       if (flushedContent && event.type === "complete") {
+        // Still send execution summary even for streamed responses
+        await this.sendExecutionSummary(adapter, event);
         return;
       }
     }
@@ -782,6 +803,33 @@ export class ChannelHub {
         await adapter.sendMessage(event.chatId, markdownToTelegramHtml(chunk));
       }
     }
+
+    // Send execution summary after the response
+    if (event.type === "complete" || event.type === "error") {
+      await this.sendExecutionSummary(adapter, event);
+    }
+  }
+
+  /** Send a compact execution summary (duration, tool count) after completion. */
+  private async sendExecutionSummary(adapter: IMAdapter, event: ExecutionEvent): Promise<void> {
+    const record = this.executionRegistry.get(event.executionId);
+    if (!record) return;
+
+    const durationMs = (record.finishedAt ?? event.timestamp) - record.startedAt;
+    const durationStr = formatDuration(durationMs);
+    const toolCount = record.toolUses.length;
+
+    // Only show summary if there was meaningful work (tools used or took > 5s)
+    if (toolCount === 0 && durationMs < 5_000) return;
+
+    const icon = record.status === "complete" ? "✅" : "❌";
+    const parts: string[] = [`${icon} <i>${durationStr}`];
+    if (toolCount > 0) {
+      parts[0] += ` · ${toolCount} tool${toolCount === 1 ? "" : "s"} used`;
+    }
+    parts[0] += "</i>";
+
+    await adapter.sendMessage(event.chatId, parts.join(""));
   }
 
   private async forwardPermissionRequest(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
@@ -844,7 +892,7 @@ export class ChannelHub {
   }
 
   /** Delay before tool activity becomes visible. Short turns never send a status message. */
-  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 3_000;
+  private static readonly TOOL_ACTIVITY_PROMOTION_MS = 1_500;
 
   private async forwardToolActivity(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
     const toolName = event.payload?.toolName || "unknown";
@@ -875,12 +923,31 @@ export class ChannelHub {
     // Otherwise: timer already running, tools are being accumulated — nothing to do yet
   }
 
+  /** Maximum number of recent tool steps to show in the activity timeline. */
+  private static readonly TOOL_ACTIVITY_MAX_VISIBLE = 5;
+
   private async sendOrEditToolActivity(adapter: IMAdapter, chatId: string, activity: { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promoted: boolean }, topicId?: number): Promise<void> {
-    const current = activity.tools[activity.tools.length - 1];
-    const description = formatToolDescription(current.name, current.input);
-    const statusMsg = activity.tools.length > 1
-      ? `⚙️ ${description} <i>(${activity.tools.length} steps)</i>`
-      : `⚙️ ${description}`;
+    const total = activity.tools.length;
+    const maxVisible = ChannelHub.TOOL_ACTIVITY_MAX_VISIBLE;
+    // Show the last N tools as a timeline
+    const visible = activity.tools.slice(-maxVisible);
+    const lines: string[] = [];
+
+    for (let i = 0; i < visible.length; i++) {
+      const tool = visible[i];
+      const desc = formatToolDescription(tool.name, tool.input);
+      const isLast = i === visible.length - 1;
+      // Current (last) tool gets a spinner indicator, previous ones get a checkmark
+      lines.push(isLast ? `▸ ${desc}` : `✓ ${desc}`);
+    }
+
+    const header = total > maxVisible
+      ? `⚙️ <b>Working</b> <i>(${total} steps)</i>`
+      : total > 1
+        ? `⚙️ <b>Working</b> <i>(${total} steps)</i>`
+        : `⚙️ <b>Working</b>`;
+
+    const statusMsg = `${header}\n${lines.join("\n")}`;
 
     if (activity.messageId && adapter.editMessage) {
       await adapter.editMessage(chatId, activity.messageId, statusMsg).catch(() => {
@@ -894,6 +961,45 @@ export class ChannelHub {
     }
   }
 
+  /**
+   * Finalize and clean up tool activity for an execution.
+   * If the activity was promoted (visible), edit it into a collapsed summary.
+   * If it was never promoted, just discard it silently.
+   */
+  private async finalizeToolActivity(adapter: IMAdapter, channelId: string, chatId: string, executionId: string): Promise<void> {
+    const key = `${channelId}:${chatId}:${executionId}`;
+    const activity = this.toolActivityMessages.get(key);
+    if (!activity) return;
+
+    if (activity.promotionTimer) {
+      clearTimeout(activity.promotionTimer);
+    }
+
+    // If the message was sent to Telegram, edit it into a compact summary
+    if (activity.promoted && activity.messageId && adapter.editMessage && activity.tools.length > 0) {
+      const toolNames = activity.tools.map((t) => t.name);
+      // Deduplicate consecutive tool names for a cleaner summary
+      const deduped: Array<{ name: string; count: number }> = [];
+      for (const name of toolNames) {
+        const last = deduped[deduped.length - 1];
+        if (last && last.name === name) {
+          last.count++;
+        } else {
+          deduped.push({ name, count: 1 });
+        }
+      }
+      const parts = deduped.map((d) => d.count > 1 ? `${d.name} x${d.count}` : d.name);
+      const summary = `✅ <i>${activity.tools.length} steps: ${escapeHtml(parts.join(" → "))}</i>`;
+      await adapter.editMessage(chatId, activity.messageId, summary).catch(() => {});
+    } else if (activity.promoted && activity.messageId && adapter.deleteMessage) {
+      // If we can't edit (no tools recorded), just delete
+      await adapter.deleteMessage(chatId, activity.messageId).catch(() => {});
+    }
+
+    this.toolActivityMessages.delete(key);
+  }
+
+  /** Cancel tool activity without finalizing (used only during stop/cleanup). */
   private clearToolActivity(channelId: string, chatId: string, executionId: string): void {
     const key = `${channelId}:${chatId}:${executionId}`;
     const activity = this.toolActivityMessages.get(key);
@@ -1176,12 +1282,15 @@ export class ChannelHub {
 
       const lines = records.map((record) => {
         const icon = record.status === "complete" ? "✅" : record.status === "error" ? "❌" : "⏳";
-        const statusLabel = record.status === "complete" ? "Complete" : record.status === "error" ? "Error" : "Running";
-        const isoTime = new Date(record.startedAt).toISOString().slice(11, 19);
-        return `• ${record.executionId} ${icon} ${statusLabel} ${isoTime}Z`;
+        const endTime = record.finishedAt ?? Date.now();
+        const durationStr = formatDuration(endTime - record.startedAt);
+        const toolCount = record.toolUses.length;
+        const shortId = record.executionId.slice(0, 8);
+        const toolInfo = toolCount > 0 ? ` · ${toolCount} tools` : "";
+        return `• <code>${shortId}</code> ${icon} ${durationStr}${toolInfo}`;
       });
 
-      await adapter.sendMessage(message.chatId, `Recent executions (this chat):\n${lines.join("\n")}`);
+      await adapter.sendMessage(message.chatId, `<b>Recent executions:</b>\n${lines.join("\n")}`);
       return;
     }
 
@@ -1193,29 +1302,47 @@ export class ChannelHub {
 
     if (command.type === "status") {
       const endTime = record.finishedAt ?? Date.now();
-      const duration = Math.max(0, Math.floor((endTime - record.startedAt) / 1_000));
-      const firstLine = record.status === "running"
-        ? `⏳ Running (${duration}s) · ${record.executionId}`
-        : record.status === "complete"
-          ? `✅ Complete (${duration}s) · ${record.executionId}`
-          : `❌ Error (${duration}s) · ${record.executionId}`;
+      const durationMs = endTime - record.startedAt;
+      const durationStr = formatDuration(durationMs);
+      const toolCount = record.toolUses.length;
+      const shortId = record.executionId.slice(0, 8);
+
+      const statusIcon = record.status === "running" ? "⏳" : record.status === "complete" ? "✅" : "❌";
+      const statusLabel = record.status === "running" ? "Running" : record.status === "complete" ? "Complete" : "Error";
+      const firstLine = `${statusIcon} <b>${statusLabel}</b> (${durationStr}) · <code>${shortId}</code>`;
+
+      const lines: string[] = [firstLine];
+
+      // Tool summary
+      if (toolCount > 0) {
+        lines.push(`🔧 ${toolCount} tool${toolCount === 1 ? "" : "s"} used`);
+      }
 
       if (record.status === "running") {
+        // Show last few tool calls for running executions
+        if (toolCount > 0) {
+          const recentTools = record.toolUses.slice(-3);
+          for (const tool of recentTools) {
+            const desc = formatToolDescription(tool.name, tool.input);
+            lines.push(`  ▸ ${desc}`);
+          }
+        }
         const lastLine = record.outputLines[record.outputLines.length - 1];
-        const lastOutput = lastLine ? `Last output: ${lastLine}` : "Last output: (none)";
-        await adapter.sendMessage(message.chatId, `${firstLine}\n${lastOutput}`);
+        if (lastLine) {
+          lines.push(`\nLast output: ${truncate(lastLine, 200)}`);
+        }
+        await adapter.sendMessage(message.chatId, lines.join("\n"));
         return;
       }
 
       if (record.status === "complete") {
-        await adapter.sendMessage(
-          message.chatId,
-          `${firstLine}\nFinished: ${new Date(record.finishedAt || Date.now()).toISOString()}`
-        );
+        lines.push(`Finished: ${new Date(record.finishedAt || Date.now()).toISOString()}`);
+        await adapter.sendMessage(message.chatId, lines.join("\n"));
         return;
       }
 
-      await adapter.sendMessage(message.chatId, `${firstLine}\nReason: ${record.errorReason || "unknown"}`);
+      lines.push(`Reason: ${record.errorReason || "unknown"}`);
+      await adapter.sendMessage(message.chatId, lines.join("\n"));
       return;
     }
 
