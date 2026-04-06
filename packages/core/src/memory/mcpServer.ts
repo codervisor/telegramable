@@ -54,7 +54,10 @@ export const createMemoryMcpServer = (options: MemoryMcpServerOptions): McpServe
         return { content: [{ type: "text", text: `Memory ${id} not found.` }] };
       }
       const oldText = existing.text;
-      await memoryProvider.update(id, text);
+      const ok = await memoryProvider.update(id, text);
+      if (!ok) {
+        return { content: [{ type: "text", text: `Failed to update memory ${id}.` }] };
+      }
       const changelog = `<b>🧠 Memory updated</b>\n\n✏️ <code>${id}</code> → ${text}`;
       await memoryProvider.sendChangelog(changelog);
       logger?.info("Memory updated via agent tool.", { id, oldText, newText: text });
@@ -73,7 +76,10 @@ export const createMemoryMcpServer = (options: MemoryMcpServerOptions): McpServe
       if (!existing) {
         return { content: [{ type: "text", text: `Memory ${id} not found.` }] };
       }
-      await memoryProvider.remove(id);
+      const ok = await memoryProvider.remove(id);
+      if (!ok) {
+        return { content: [{ type: "text", text: `Failed to delete memory ${id}.` }] };
+      }
       const changelog = `<b>🧠 Memory updated</b>\n\n🗑️ <code>${id}</code> ${existing.text}`;
       await memoryProvider.sendChangelog(changelog);
       logger?.info("Memory deleted via agent tool.", { id, text: existing.text });

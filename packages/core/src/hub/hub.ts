@@ -3,7 +3,7 @@ import { EventBus } from "../events/eventBus";
 import { ExecutionEvent } from "../events/types";
 import { IMAdapter, IMAdapterStartOptions, IMMessage } from "../gateway/types";
 import { Logger } from "../logging";
-import { MemoryStore, formatMemoryList } from "../memory";
+import { formatMemoryList } from "../memory";
 import { MemoryProvider } from "../memory/provider";
 import { MemorySync } from "../memory/sync";
 import { FileSessionStore } from "../runtime/session/fileSessionStore";
@@ -1055,7 +1055,7 @@ export class ChannelHub {
     // Memory commands
     if (command.type === "memory") {
       if (!this.memoryProvider) {
-        await adapter.sendMessage(message.chatId, "Memory is not configured. Set MEMORY_CHAT_ID to enable.");
+        await adapter.sendMessage(message.chatId, "Memory is not configured. Set MEMORY_CHAT_ID for Telegram-backed memory, or set MEMORY_PROVIDER=mem0 and MEM0_API_KEY for Mem0.");
         return;
       }
       if (adapter.sendMessageWithMarkup) {

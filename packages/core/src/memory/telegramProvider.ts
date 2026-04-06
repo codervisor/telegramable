@@ -118,7 +118,8 @@ export class TelegramMemoryProvider implements MemoryProvider {
     await this.sync.sendChangelog(text);
   }
 
-  private async syncToTelegram(): Promise<void> {
+  /** Persist current store state to Telegram. Exposed for CLI runtime sync. */
+  async syncToTelegram(): Promise<void> {
     try {
       await this.sync.save(this.store.snapshot());
     } catch (err) {

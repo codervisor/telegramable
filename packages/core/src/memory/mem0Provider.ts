@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Logger } from "../logging";
 import { MemoryChangelog, MemoryProvider } from "./provider";
 import { MemoryFact, MemoryTag } from "./store";
@@ -84,7 +85,7 @@ export class Mem0MemoryProvider implements MemoryProvider {
 
     const res = await this.request<Mem0AddResponse>("POST", "/v1/memories/", body);
     const entry = res.results?.[0];
-    const id = entry?.id || crypto.randomUUID();
+    const id = entry?.id || randomUUID();
 
     const fact: MemoryFact = {
       id,

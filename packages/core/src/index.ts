@@ -61,6 +61,9 @@ export async function startDaemon(): Promise<void> {
 
         await memoryProvider.load();
         logger.info("Memory provider initialized.", { provider: "mem0" });
+      } else if (config.memory.provider === "mem0") {
+        // mem0 selected but config incomplete (missing API key)
+        logger.warn("MEMORY_PROVIDER=mem0 but MEM0_API_KEY is missing — skipping memory.");
       } else {
         // Telegram provider (default) — needs a Bot instance for MemorySync
         const telegramChannel = config.channels.find((ch) => ch.type === "telegram");

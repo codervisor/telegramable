@@ -218,7 +218,8 @@ export const loadConfig = (): Config => {
 
   const memoryChatId = process.env.MEMORY_CHAT_ID?.trim();
   const memoryTopicId = process.env.MEMORY_TOPIC_ID?.trim();
-  const memoryProvider = (process.env.MEMORY_PROVIDER?.trim() || "telegram") as MemoryProviderType;
+  const rawMemoryProvider = process.env.MEMORY_PROVIDER?.trim() || "telegram";
+  const memoryProvider: MemoryProviderType = rawMemoryProvider === "mem0" ? "mem0" : "telegram";
   const mem0ApiKey = process.env.MEM0_API_KEY?.trim();
 
   const parseMem0Config = (): Mem0ProviderConfig | undefined => {
@@ -265,7 +266,7 @@ export const loadConfig = (): Config => {
     defaultAgent: process.env.DEFAULT_AGENT,
     logLevel: parseLogLevel(process.env.LOG_LEVEL),
     dataDir: process.env.DATA_DIR || defaultWorkingDir() || undefined,
-    memory: (memoryChatId || memoryProvider === "mem0")
+    memory: (memoryChatId || (memoryProvider === "mem0" && mem0ApiKey))
       ? {
           enabled: true,
           provider: memoryProvider,

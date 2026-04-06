@@ -247,6 +247,8 @@ export class CliRuntime implements Runtime {
 
       if (changelogParts.length === 0) return;
 
+      // Persist mutated store back to Telegram pinned message
+      await telegramProvider.syncToTelegram();
       await telegramProvider.sendChangelog(
         `<b>🧠 Memory updated</b>\n\n${changelogParts.join("\n")}`,
       );
