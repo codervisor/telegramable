@@ -83,9 +83,9 @@ const renderTable = (lines: string[]): string => {
 
   // Build formatted rows
   const formatRow = (cells: string[]): string => {
-    return cells
-      .map((cell, i) => (cell || "").padEnd(colWidths[i] || 0))
-      .join(" │ ");
+    return Array.from({ length: colCount }, (_, i) =>
+      (cells[i] ?? "").padEnd(colWidths[i] || 0)
+    ).join(" │ ");
   };
 
   const separator = colWidths.map((w) => "─".repeat(w)).join("─┼─");

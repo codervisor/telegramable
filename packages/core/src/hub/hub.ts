@@ -359,9 +359,14 @@ export class ChannelHub {
       return;
     }
 
-    // Prepend quoted/reply message context so the agent sees what the user is replying to
-    const enrichedMessage = message.replyToText
-      ? { ...message, text: `[Quoted message]\n${message.replyToText}\n[End quoted message]\n\n${message.text}` }
+    // Prepend quoted/reply message context so the agent sees what the user is replying to.
+    // Truncate to avoid exceeding OS argv limits in CLI runtime path.
+    const MAX_REPLY_CONTEXT = 500;
+    const replyContext = message.replyToText
+      ? truncate(message.replyToText, MAX_REPLY_CONTEXT)
+      : undefined;
+    const enrichedMessage = replyContext
+      ? { ...message, text: `[Quoted message]\n${replyContext}\n[End quoted message]\n\n${message.text}` }
       : message;
 
     const executionId = randomUUID();

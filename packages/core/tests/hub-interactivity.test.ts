@@ -109,3 +109,59 @@ test("ChannelHub supports /status /logs /list without routing to runtime", async
 
   await hub.stop();
 });
+
+test("ChannelHub prepends replyToText context to routed message", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+
+  let capturedText = "";
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      capturedText = message.text;
+      bus.emit({
+        executionId,
+        channelId: message.channelId,
+        chatId: message.chatId,
+        type: "complete",
+        timestamp: Date.now(),
+        payload: { response: "ok" }
+      });
+    }
+  };
+
+  const router: Router = {
+    select(message) {
+      return { runtime, message };
+    }
+  };
+
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  // Message WITH replyToText should prepend quoted context
+  await adapter.simulateIncoming({
+    channelId: "telegram",
+    chatId: "chat-1",
+    text: "what about this?",
+    replyToText: "The previous bot response"
+  });
+
+  await sleep(30);
+  assert.ok(capturedText.includes("[Quoted message]"), "should include quoted block header");
+  assert.ok(capturedText.includes("The previous bot response"), "should include reply text");
+  assert.ok(capturedText.includes("what about this?"), "should include original message");
+
+  // Message WITHOUT replyToText should be unchanged
+  capturedText = "";
+  await adapter.simulateIncoming({
+    channelId: "telegram",
+    chatId: "chat-1",
+    text: "plain message"
+  });
+
+  await sleep(30);
+  assert.equal(capturedText, "plain message", "should pass through unchanged without replyToText");
+
+  await hub.stop();
+});

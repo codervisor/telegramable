@@ -30,8 +30,9 @@ export class TelegramAdapter implements IMAdapter {
       }
 
       // Extract quoted/reply message text if the user replied to a message
-      const replyMsg = (message as unknown as Record<string, unknown>).reply_to_message as
-        | { text?: string; caption?: string } | undefined;
+      const replyMsg = "reply_to_message" in message
+        ? (message.reply_to_message as { text?: string; caption?: string } | undefined)
+        : undefined;
       const replyToText = replyMsg?.text || replyMsg?.caption || undefined;
 
       const payload: IMMessage = {

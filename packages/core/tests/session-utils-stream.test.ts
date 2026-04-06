@@ -66,3 +66,44 @@ test("spawnAndStream rejects with cwd message when directory not found", async (
     }
   );
 });
+
+test("spawnAndStream activity-based timeout resets on output", async () => {
+  // Script produces output every 200ms for 4 iterations (total ~800ms).
+  // Timeout is 500ms — would fail with a wall-clock timeout, but should
+  // succeed because each chunk resets the inactivity timer.
+  const script = `
+    let i = 0;
+    const iv = setInterval(() => {
+      process.stdout.write('tick' + i + '\\n');
+      if (++i >= 4) { clearInterval(iv); }
+    }, 200);
+  `;
+
+  const result = await spawnAndStream(
+    `node -e "${script.replace(/\n/g, " ")}"`,
+    [],
+    { timeoutMs: 500 }
+  );
+
+  assert.equal(result.code, 0, "should complete without timeout");
+  assert.ok(result.stdout.includes("tick3"), "should have received all ticks");
+});
+
+test("spawnAndCollect activity-based timeout resets on output", async () => {
+  const script = `
+    let i = 0;
+    const iv = setInterval(() => {
+      process.stdout.write('tick' + i + '\\n');
+      if (++i >= 4) { clearInterval(iv); }
+    }, 200);
+  `;
+
+  const result = await spawnAndCollect(
+    `node -e "${script.replace(/\n/g, " ")}"`,
+    [],
+    { timeoutMs: 500 }
+  );
+
+  assert.equal(result.code, 0, "should complete without timeout");
+  assert.ok(result.stdout.includes("tick3"), "should have received all ticks");
+});
