@@ -53,6 +53,9 @@ RUN apt-get update && \
 RUN su claude -c 'curl -fsSL https://claude.ai/install.sh | bash'
 ENV PATH="/home/claude/.local/bin:/home/claude/.claude/local/bin:${PATH}"
 
+# Install Railway CLI (gives agents access to deployments and logs via RAILWAY_TOKEN)
+RUN npm install -g @railway/cli
+
 # Web — Next.js standalone output
 COPY --from=builder /app/apps/web/.next/standalone ./web/
 COPY --from=builder /app/apps/web/.next/static ./web/apps/web/.next/static
