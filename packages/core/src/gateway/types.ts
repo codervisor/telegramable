@@ -10,6 +10,8 @@ export interface IMMessage {
   mimeType?: string;
   callbackData?: string;
   callbackQueryId?: string;
+  /** Text of the message being replied to (quoted message context). */
+  replyToText?: string;
   raw?: unknown;
 }
 

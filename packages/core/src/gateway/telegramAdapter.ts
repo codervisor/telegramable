@@ -29,6 +29,11 @@ export class TelegramAdapter implements IMAdapter {
         return;
       }
 
+      // Extract quoted/reply message text if the user replied to a message
+      const replyMsg = (message as unknown as Record<string, unknown>).reply_to_message as
+        | { text?: string; caption?: string } | undefined;
+      const replyToText = replyMsg?.text || replyMsg?.caption || undefined;
+
       const payload: IMMessage = {
         channelId: this.id,
         chatId: String(message.chat.id),
@@ -36,6 +41,7 @@ export class TelegramAdapter implements IMAdapter {
         text: message.text,
         messageId: message.message_id,
         threadId: message.message_thread_id,
+        replyToText,
         raw: message
       };
 

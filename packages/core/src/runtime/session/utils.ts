@@ -65,17 +65,25 @@ export const spawnAndCollect: CommandRunner = async (command, args, options) => 
     let stdout = "";
     let stderr = "";
 
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("Runtime timeout."));
-    }, options?.timeoutMs ?? 10 * 60 * 1000);
+    const timeoutMs = options?.timeoutMs ?? 10 * 60 * 1000;
+    let timeout: ReturnType<typeof setTimeout>;
+    const resetTimeout = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error("Runtime timeout."));
+      }, timeoutMs);
+    };
+    resetTimeout();
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
+      resetTimeout();
     });
 
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
+      resetTimeout();
     });
 
     child.on("error", (error) => {
@@ -104,20 +112,28 @@ export const spawnAndStream: CommandRunner = async (command, args, options, onCh
     let stdout = "";
     let stderr = "";
 
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("Runtime timeout."));
-    }, options?.timeoutMs ?? 10 * 60 * 1000);
+    const timeoutMs = options?.timeoutMs ?? 10 * 60 * 1000;
+    let timeout: ReturnType<typeof setTimeout>;
+    const resetTimeout = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error("Runtime timeout."));
+      }, timeoutMs);
+    };
+    resetTimeout();
 
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
       stdout += text;
+      resetTimeout();
       onChunk?.("stdout", text);
     });
 
     child.stderr?.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
       stderr += text;
+      resetTimeout();
       onChunk?.("stderr", text);
     });
 

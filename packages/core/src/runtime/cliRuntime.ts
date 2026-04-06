@@ -376,29 +376,37 @@ export class CliRuntime implements Runtime {
         });
       }, 30_000);
 
-      const timeout: NodeJS.Timeout = setTimeout(() => {
-        child.kill("SIGKILL");
-        if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
-        this.logger.error("CLI runtime timeout — killing process.", {
-          executionId,
-          pid: child.pid,
-          timeoutMs,
-          receivedAnyOutput,
-          stderr: stderrChunks.join("").slice(0, 500)
-        });
-        eventBus.emit({
-          executionId,
-          channelId: message.channelId,
-          chatId: message.chatId,
-          type: "error",
-          timestamp: Date.now(),
-          payload: { reason: "Runtime timeout." }
-        });
-        reject(new Error("Runtime timeout."));
-      }, timeoutMs);
+      // Activity-based timeout: resets on each stdout/stderr chunk so
+      // long-running but active processes don't get killed.
+      let timeout: NodeJS.Timeout;
+      const resetTimeout = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          child.kill("SIGKILL");
+          if (mcpFiles) this.cleanupMcpFiles(mcpFiles.mcpDir, mcpFiles.mcpConfigPath, mcpFiles.stateFilePath);
+          this.logger.error("CLI runtime timeout — killing process.", {
+            executionId,
+            pid: child.pid,
+            timeoutMs,
+            receivedAnyOutput,
+            stderr: stderrChunks.join("").slice(0, 500)
+          });
+          eventBus.emit({
+            executionId,
+            channelId: message.channelId,
+            chatId: message.chatId,
+            type: "error",
+            timestamp: Date.now(),
+            payload: { reason: "Runtime timeout." }
+          });
+          reject(new Error("Runtime timeout."));
+        }, timeoutMs);
+      };
+      resetTimeout();
 
       child.stdout?.on("data", (chunk: Buffer) => {
         receivedAnyOutput = true;
+        resetTimeout(); // Reset inactivity timeout on output
         const text = chunk.toString();
         stdoutChunks.push(text);
         eventBus.emit({
@@ -413,6 +421,7 @@ export class CliRuntime implements Runtime {
 
       child.stderr?.on("data", (chunk: Buffer) => {
         receivedAnyOutput = true;
+        resetTimeout(); // Reset inactivity timeout on output
         const text = chunk.toString();
         stderrChunks.push(text);
         this.logger.warn("CLI stderr output.", { executionId, text: text.slice(0, 500) });

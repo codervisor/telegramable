@@ -47,12 +47,92 @@ export const markdownToTelegramHtml = (md: string): string => {
   return segments.join("");
 };
 
+/**
+ * Detect whether a sequence of lines forms a markdown table.
+ * A table needs at least a header row and a separator row (e.g. |---|---|).
+ */
+const isTableBlock = (lines: string[]): boolean => {
+  if (lines.length < 2) return false;
+  // Check the second line is a separator row: cells containing only dashes/colons/spaces
+  const sepLine = lines[1].trim().replace(/^\||\|$/g, "");
+  return /^[\s|:-]+$/.test(sepLine) && sepLine.includes("-");
+};
+
+/**
+ * Render a markdown table as a Telegram-friendly monospace <pre> block.
+ * Parses cells, pads them to equal widths, and uses box-drawing-style separators.
+ */
+const renderTable = (lines: string[]): string => {
+  // Parse each row into cells
+  const rows = lines.map((line) => {
+    const trimmed = line.trim().replace(/^\||\|$/g, "");
+    return trimmed.split("|").map((cell) => cell.trim());
+  });
+
+  // Remove the separator row (index 1)
+  const dataRows = rows.filter((_, i) => i !== 1);
+
+  // Calculate max width per column
+  const colCount = Math.max(...dataRows.map((r) => r.length));
+  const colWidths: number[] = Array.from({ length: colCount }, () => 0);
+  for (const row of dataRows) {
+    for (let i = 0; i < colCount; i++) {
+      colWidths[i] = Math.max(colWidths[i], (row[i] || "").length);
+    }
+  }
+
+  // Build formatted rows
+  const formatRow = (cells: string[]): string => {
+    return cells
+      .map((cell, i) => (cell || "").padEnd(colWidths[i] || 0))
+      .join(" │ ");
+  };
+
+  const separator = colWidths.map((w) => "─".repeat(w)).join("─┼─");
+
+  const formatted: string[] = [];
+  for (let i = 0; i < dataRows.length; i++) {
+    formatted.push(formatRow(dataRows[i]));
+    // Add separator after header (first data row)
+    if (i === 0) {
+      formatted.push(separator);
+    }
+  }
+
+  return `<pre>${escapeHtml(formatted.join("\n"))}</pre>`;
+};
+
+/** Detect if a line looks like a markdown table row (starts/contains pipe-delimited cells). */
+const isTableRow = (line: string): boolean => /^\s*\|.+\|/.test(line);
+
 /** Convert inline markdown (everything except fenced code blocks). */
 const convertInline = (text: string): string => {
-  return text
-    .split("\n")
-    .map(convertLine)
-    .join("\n");
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Detect table blocks: consecutive lines that look like table rows
+    if (isTableRow(lines[i])) {
+      const tableStart = i;
+      while (i < lines.length && isTableRow(lines[i])) {
+        i++;
+      }
+      const tableLines = lines.slice(tableStart, i);
+      if (isTableBlock(tableLines)) {
+        result.push(renderTable(tableLines));
+      } else {
+        // Not a real table — convert lines normally
+        result.push(...tableLines.map(convertLine));
+      }
+      continue;
+    }
+
+    result.push(convertLine(lines[i]));
+    i++;
+  }
+
+  return result.join("\n");
 };
 
 /** Convert a single line of markdown to Telegram HTML. */

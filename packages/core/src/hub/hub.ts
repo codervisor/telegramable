@@ -359,8 +359,13 @@ export class ChannelHub {
       return;
     }
 
+    // Prepend quoted/reply message context so the agent sees what the user is replying to
+    const enrichedMessage = message.replyToText
+      ? { ...message, text: `[Quoted message]\n${message.replyToText}\n[End quoted message]\n\n${message.text}` }
+      : message;
+
     const executionId = randomUUID();
-    const { runtime, message: routedMessage } = this.router.select(message);
+    const { runtime, message: routedMessage } = this.router.select(enrichedMessage);
 
     if (adapter) {
       // Try to create a forum topic for this execution

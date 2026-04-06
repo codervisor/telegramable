@@ -138,10 +138,17 @@ export class SdkClaudeSession implements AgentSession {
     let resultText = "";
     let messageCount = 0;
 
-    const timeout = setTimeout(() => {
-      this.logger?.error("SDK query timeout — aborting.", { executionId, timeoutMs, messageCount });
-      abortController.abort();
-    }, timeoutMs);
+    // Activity-based timeout: resets on each SDK message so long-running
+    // but active queries (tool use, streaming) don't get killed.
+    let timeout!: ReturnType<typeof setTimeout>;
+    const resetTimeout = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        this.logger?.error("SDK query timeout — aborting.", { executionId, timeoutMs, messageCount });
+        abortController.abort();
+      }, timeoutMs);
+    };
+    resetTimeout();
 
     this.logger?.debug("Starting SDK query.", { executionId, timeoutMs });
 
@@ -177,6 +184,7 @@ export class SdkClaudeSession implements AgentSession {
     try {
       for await (const message of sdkQuery) {
         messageCount++;
+        resetTimeout(); // Reset inactivity timeout on each message
         this.logger?.debug("SDK message received.", { executionId, type: message.type, subtype: (message as { subtype?: string }).subtype, messageCount });
         this.processMessage(message, executionId, eventBus);
 
