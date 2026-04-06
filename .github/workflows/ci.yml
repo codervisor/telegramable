@@ -1,3 +1,5 @@
+# Drop this file as .github/workflows/ci.yml in your TypeScript repo.
+# It calls the shared CI workflow from codervisor/codervisor.
 name: CI
 
 on:
@@ -6,73 +8,6 @@ on:
   pull_request:
     branches: [main]
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm build
-
-      - name: Unit tests
-        run: pnpm --filter @telegramable/core test:unit
-
-      - name: Integration tests
-        run: pnpm test:integration
-        env:
-          INTEGRATION_RUNTIME_COMMAND: "echo"
-          INTEGRATION_TIMEOUT_MS: "10000"
-
-  docker-build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker build (dry run)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          load: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+  ci:
+    uses: codervisor/codervisor/.github/workflows/ci-typescript.yml@main
