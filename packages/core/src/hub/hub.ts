@@ -5,6 +5,7 @@ import { IMAdapter, IMAdapterStartOptions, IMMessage } from "../gateway/types";
 import { Logger } from "../logging";
 import { formatMemoryList } from "../memory";
 import { MemoryProvider } from "../memory/provider";
+import { MemoryRefinementScheduler } from "../memory/scheduler";
 import { MemorySync } from "../memory/sync";
 import { FileSessionStore } from "../runtime/session/fileSessionStore";
 import { ChunkThrottler } from "./chunkThrottler";
@@ -69,6 +70,7 @@ type BuiltinCommand =
   | { type: "memory-export" }
   | { type: "memory-clear" }
   | { type: "memory-channel" }
+  | { type: "memory-refine" }
   | null;
 
 export const parseBuiltinCommand = (text: string): BuiltinCommand => {
@@ -122,6 +124,10 @@ export const parseBuiltinCommand = (text: string): BuiltinCommand => {
 
   if (/^\/memory\s+channel\s*$/i.test(trimmed)) {
     return { type: "memory-channel" };
+  }
+
+  if (/^\/memory\s+refine\s*$/i.test(trimmed)) {
+    return { type: "memory-refine" };
   }
 
   if (/^\/memory\s*$/i.test(trimmed)) {
@@ -245,7 +251,8 @@ export class ChannelHub {
     private readonly memoryProvider?: MemoryProvider,
     private readonly memoryChannelInfo?: MemoryChannelInfo,
     /** @deprecated Use memoryProvider instead. Kept for backward compat with MemorySync audit log. */
-    private readonly memorySync?: MemorySync
+    private readonly memorySync?: MemorySync,
+    private readonly refinementScheduler?: MemoryRefinementScheduler
   ) {
     this.executionRegistry = executionRegistry ?? new InMemoryExecutionRegistry();
     this.permissionBridge = new PermissionBridge(logger);
@@ -1251,6 +1258,7 @@ export class ChannelHub {
         "/memory delete &lt;id&gt; — Remove a memory",
         "/memory export — Export memories as JSON",
         "/memory clear — Clear all memories",
+        "/memory refine — Consolidate and deduplicate memories",
         "/list — List recent executions",
         "/status &lt;id&gt; — Check execution status",
         "/logs &lt;id&gt; — View execution logs",
@@ -1354,6 +1362,42 @@ export class ChannelHub {
           `Memory channel: ${this.memoryChannelInfo.resolvedChatId}` +
           (this.memoryChannelInfo.rawChatId ? ` (configured as ${this.memoryChannelInfo.rawChatId})` : "")
         );
+      }
+      return;
+    }
+
+    if (command.type === "memory-refine") {
+      if (!this.memoryProvider) {
+        await adapter.sendMessage(message.chatId, "Memory is not configured.");
+        return;
+      }
+      if (!this.refinementScheduler) {
+        await adapter.sendMessage(message.chatId, "Memory refinement is not configured. Set ANTHROPIC_API_KEY or OPENAI_BASE_URL + OPENAI_API_KEY to enable.");
+        return;
+      }
+      const factCount = this.memoryProvider.all().length;
+      if (factCount < 2) {
+        await adapter.sendMessage(message.chatId, "Too few facts to refine.");
+        return;
+      }
+      await adapter.sendMessage(message.chatId, `Refining ${factCount} facts...`);
+      try {
+        const changelog = await this.refinementScheduler.runNow();
+        if (changelog) {
+          await adapter.sendMessage(
+            message.chatId,
+            `Refinement complete: ${changelog.beforeCount} → ${changelog.afterCount} facts` +
+            (changelog.updated > 0 ? `, ${changelog.updated} rewritten` : "") +
+            (changelog.removed > 0 ? `, ${changelog.removed} removed` : "") +
+            (changelog.added > 0 ? `, ${changelog.added} synthesized` : "") +
+            ".",
+          );
+        } else {
+          await adapter.sendMessage(message.chatId, "No changes needed.");
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : "unknown";
+        await adapter.sendMessage(message.chatId, `Refinement failed: ${escapeHtml(reason)}`);
       }
       return;
     }

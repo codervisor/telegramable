@@ -46,6 +46,13 @@ export interface MemoryProvider {
    * Providers that don't support audit logging can no-op.
    */
   sendChangelog(text: string): Promise<void>;
+
+  /**
+   * Save the current state as a new snapshot/version (e.g. new pinned message).
+   * Called after refinement to create a clean checkpoint.
+   * Providers that don't support versioned snapshots can no-op.
+   */
+  saveNewSnapshot(): Promise<void>;
 }
 
 export interface MemoryChangelog {

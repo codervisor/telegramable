@@ -10,3 +10,7 @@ export { MemoryExtractor } from "./extractor";
 export type { MemoryChanges } from "./extractor";
 export { createMemoryMcpServer } from "./mcpServer";
 export type { MemoryMcpServerOptions } from "./mcpServer";
+export { MemoryRefiner } from "./refiner";
+export type { RefinementResult } from "./refiner";
+export { MemoryRefinementScheduler } from "./scheduler";
+export type { RefinementSchedulerConfig, RefinementChangelog } from "./scheduler";

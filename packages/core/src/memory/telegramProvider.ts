@@ -118,6 +118,17 @@ export class TelegramMemoryProvider implements MemoryProvider {
     await this.sync.sendChangelog(text);
   }
 
+  async saveNewSnapshot(): Promise<void> {
+    try {
+      await this.sync.saveAsNewPin(this.store.snapshot());
+      this.logger?.info("New memory snapshot pinned after refinement.");
+    } catch (err) {
+      this.logger?.warn("Failed to save new memory snapshot.", {
+        reason: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  }
+
   /** Persist current store state to Telegram. Exposed for CLI runtime sync. */
   async syncToTelegram(): Promise<void> {
     try {

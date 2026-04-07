@@ -193,6 +193,10 @@ export class Mem0MemoryProvider implements MemoryProvider {
     // Callers (e.g. ChannelHub) can optionally forward to Telegram.
   }
 
+  async saveNewSnapshot(): Promise<void> {
+    // Mem0 handles persistence internally — no versioned snapshots needed.
+  }
+
   // -- Semantic search via Mem0 API (async, for richer retrieval) --
 
   async semanticSearch(query: string, limit = 20): Promise<MemoryFact[]> {

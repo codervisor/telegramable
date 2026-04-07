@@ -85,6 +85,42 @@ export class MemorySync {
     }
   }
 
+  /**
+   * Save the snapshot as a NEW pinned message (instead of editing the existing one).
+   * Use this after refinement to create a clean version checkpoint.
+   * The old pinned message is unpinned but not deleted (serves as history).
+   */
+  async saveAsNewPin(snapshot: MemorySnapshot): Promise<void> {
+    const chatId = Number(this.config.chatId);
+
+    // Truncate if needed (same logic as save)
+    while (JSON.stringify(snapshot, null, 2).length > 4000 && snapshot.facts.length > 0) {
+      snapshot.facts.shift();
+    }
+
+    const text = JSON.stringify(snapshot, null, 2);
+
+    try {
+      // Unpin old message (keep it as history)
+      if (this.pinnedMessageId) {
+        await this.bot.api.unpinChatMessage(chatId, this.pinnedMessageId).catch(() => {});
+      }
+
+      // Send and pin a new message
+      const msg = await this.bot.api.sendMessage(chatId, text, {
+        message_thread_id: this.config.topicId,
+      });
+      this.pinnedMessageId = msg.message_id;
+      await this.bot.api.pinChatMessage(chatId, msg.message_id, {
+        disable_notification: true,
+      });
+    } catch (error) {
+      this.logger.error("Failed to save new pinned memory to Telegram.", {
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+
   /** Send a human-readable changelog message (not pinned). */
   async sendChangelog(changesSummary: string): Promise<void> {
     if (!changesSummary) return;

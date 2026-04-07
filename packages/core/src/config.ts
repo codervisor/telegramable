@@ -82,6 +82,13 @@ export interface Mem0ProviderConfig {
   userId?: string; // defaults to "default"
 }
 
+export interface MemoryRefinementConfig {
+  /** Interval between automatic refinements in milliseconds. Default: 86400000 (24h). */
+  intervalMs: number;
+  /** Trigger refinement when fact count reaches this threshold. 0 = disabled. Default: 50. */
+  factThreshold: number;
+}
+
 export interface MemoryConfig {
   enabled: boolean;
   provider: MemoryProviderType;
@@ -89,6 +96,7 @@ export interface MemoryConfig {
   topicId?: number;
   extraction?: MemoryExtractionConfig;
   mem0?: Mem0ProviderConfig;
+  refinement?: MemoryRefinementConfig;
 }
 
 export interface Config {
@@ -260,6 +268,25 @@ export const loadConfig = (): Config => {
     return undefined;
   };
 
+  const parseRefinementConfig = (): MemoryRefinementConfig | undefined => {
+    // Refinement requires an extraction LLM — reuse the same config
+    if (!parseMemoryExtraction()) return undefined;
+
+    // Explicitly disabled via MEMORY_REFINEMENT_ENABLED=false
+    if (process.env.MEMORY_REFINEMENT_ENABLED?.trim().toLowerCase() === "false") return undefined;
+
+    const rawInterval = process.env.MEMORY_REFINEMENT_INTERVAL_MS?.trim();
+    const rawThreshold = process.env.MEMORY_REFINEMENT_THRESHOLD?.trim();
+
+    const intervalMs = rawInterval ? Number(rawInterval) : 24 * 60 * 60 * 1000;
+    const factThreshold = rawThreshold ? Number(rawThreshold) : 50;
+
+    return {
+      intervalMs: Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 24 * 60 * 60 * 1000,
+      factThreshold: Number.isFinite(factThreshold) && factThreshold >= 0 ? factThreshold : 50,
+    };
+  };
+
   return {
     channels: parseChannels(),
     agents: parseAgents(),
@@ -274,6 +301,7 @@ export const loadConfig = (): Config => {
           topicId: memoryTopicId ? Number(memoryTopicId) : undefined,
           extraction: parseMemoryExtraction(),
           mem0: parseMem0Config(),
+          refinement: parseRefinementConfig(),
         }
       : undefined,
   };

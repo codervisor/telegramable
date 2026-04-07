@@ -10,6 +10,8 @@ import { createLogger } from "./logging";
 import { MemoryExtractor } from "./memory/extractor";
 import { Mem0MemoryProvider } from "./memory/mem0Provider";
 import { MemoryProvider } from "./memory/provider";
+import { MemoryRefiner } from "./memory/refiner";
+import { MemoryRefinementScheduler } from "./memory/scheduler";
 import { MemorySync } from "./memory/sync";
 import { TelegramMemoryProvider } from "./memory/telegramProvider";
 import { createAgentRegistry } from "./runtime";
@@ -134,17 +136,35 @@ export async function startDaemon(): Promise<void> {
     }
   }
 
+  // Initialize memory refinement scheduler if configured
+  let refinementScheduler: MemoryRefinementScheduler | undefined;
+  if (memoryProvider && config.memory?.extraction && config.memory.refinement) {
+    const refiner = new MemoryRefiner(config.memory.extraction, logger);
+    refinementScheduler = new MemoryRefinementScheduler(
+      memoryProvider,
+      refiner,
+      config.memory.refinement,
+      logger,
+    );
+    refinementScheduler.start();
+    logger.info("Memory refinement scheduler initialized.", {
+      intervalMs: config.memory.refinement.intervalMs,
+      factThreshold: config.memory.refinement.factThreshold,
+    });
+  }
+
   logger.info("Creating agent registry.", { hasMemoryProvider: !!memoryProvider });
   const registry = createAgentRegistry(config, logger, memoryProvider);
 
   const adapters = config.channels.map((channel) => createAdapter(channel, logger));
   const router = new DefaultRouter(config.channels, registry);
-  const hub = new ChannelHub(adapters, router, eventBus, logger, undefined, memoryProvider, memoryChannelInfo, memorySync);
+  const hub = new ChannelHub(adapters, router, eventBus, logger, undefined, memoryProvider, memoryChannelInfo, memorySync, refinementScheduler);
 
   await hub.start();
 
   const shutdown = async () => {
     logger.info("Shutting down...");
+    refinementScheduler?.stop();
     await hub.stop();
     process.exit(0);
   };
