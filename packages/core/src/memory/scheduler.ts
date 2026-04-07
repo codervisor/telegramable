@@ -113,13 +113,13 @@ export class MemoryRefinementScheduler {
       this.logger?.info("Starting memory refinement.", { factCount: facts.length });
 
       const result = await this.refiner.refine(facts);
-      if (isNoOp(result)) {
+      if (!result) {
         this.logger?.info("Refinement completed — no changes needed.");
         this.lastRefinedAt = new Date();
         return null;
       }
 
-      const changelog = await this.applyResult(result, facts.length);
+      const changelog = await this.applySnapshot(result, facts.length);
       this.lastRefinedAt = new Date();
 
       this.logger?.info("Memory refinement completed.", { ...changelog });
@@ -140,49 +140,27 @@ export class MemoryRefinementScheduler {
   }
 
   /**
-   * Apply the diff from the refiner to the live memory provider.
-   * The refiner already ran the tools against a snapshot — we replay
-   * the same changes against the live store.
+   * Atomically replace the provider's memory state with the refined snapshot.
+   * Single write to Telegram (new pinned message) instead of N individual edits.
    */
-  private async applyResult(result: RefinementResult, beforeCount: number): Promise<RefinementChangelog> {
-    // Apply updates
-    for (const item of result.updated) {
-      await this.provider.update(item.id, item.newText);
-    }
-
-    // Apply removals
-    for (const item of result.removed) {
-      await this.provider.remove(item.id);
-    }
-
-    // Apply additions
-    for (const fact of result.added) {
-      await this.provider.add(fact.tag, fact.text);
-    }
-
-    const afterCount = this.provider.all().length;
+  private async applySnapshot(result: RefinementResult, beforeCount: number): Promise<RefinementChangelog> {
+    // Load the refined snapshot wholesale and persist as new pinned message
+    await this.provider.loadAndSaveSnapshot(result.snapshot);
 
     const changelog: RefinementChangelog = {
-      removed: result.removed.length,
-      added: result.added.length,
-      updated: result.updated.length,
+      removed: result.removed,
+      added: result.added,
+      updated: result.updated,
       beforeCount,
-      afterCount,
+      afterCount: result.snapshot.facts.length,
     };
 
-    // Save as new pinned snapshot (version checkpoint)
-    await this.provider.saveNewSnapshot().catch(() => {});
-
-    // Send audit changelog
+    // Send audit changelog to memory channel
     const changelogText = formatRefinementChangelog(changelog);
     await this.provider.sendChangelog(changelogText).catch(() => {});
 
     return changelog;
   }
-}
-
-function isNoOp(result: RefinementResult): boolean {
-  return result.added.length === 0 && result.updated.length === 0 && result.removed.length === 0;
 }
 
 function formatRefinementChangelog(cl: RefinementChangelog): string {

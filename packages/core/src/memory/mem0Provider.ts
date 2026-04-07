@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Logger } from "../logging";
 import { MemoryChangelog, MemoryProvider } from "./provider";
-import { MemoryFact, MemoryTag } from "./store";
+import { MemoryFact, MemorySnapshot, MemoryTag } from "./store";
 
 export interface Mem0Config {
   apiKey: string;
@@ -193,8 +193,13 @@ export class Mem0MemoryProvider implements MemoryProvider {
     // Callers (e.g. ChannelHub) can optionally forward to Telegram.
   }
 
-  async saveNewSnapshot(): Promise<void> {
-    // Mem0 handles persistence internally — no versioned snapshots needed.
+  async loadAndSaveSnapshot(snapshot: MemorySnapshot): Promise<void> {
+    // Mem0 handles persistence internally.
+    // Rebuild local cache from the snapshot.
+    this.cache.clear();
+    for (const fact of snapshot.facts) {
+      this.cache.set(fact.id, fact);
+    }
   }
 
   // -- Semantic search via Mem0 API (async, for richer retrieval) --

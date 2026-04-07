@@ -17,12 +17,14 @@ import { Logger } from "../logging";
 import { MemoryFact, MemorySnapshot, MemoryTag } from "./store";
 
 export interface RefinementResult {
-  added: MemoryFact[];
-  updated: Array<{ id: string; oldText: string; newText: string }>;
-  removed: Array<{ id: string; text: string }>;
+  /** The full post-refinement snapshot — load this wholesale into the provider. */
+  snapshot: MemorySnapshot;
+  /** Changelog stats for logging/audit. */
+  added: number;
+  updated: number;
+  removed: number;
 }
 
-const EMPTY_RESULT: RefinementResult = { added: [], updated: [], removed: [] };
 
 const REFINEMENT_PROMPT = `You are a memory refinement system. Your job is to review and consolidate stored memories using the memory tools available to you.
 
@@ -62,15 +64,15 @@ export class MemoryRefiner {
     private readonly timeoutMs: number = 120_000,
   ) {}
 
-  async refine(facts: MemoryFact[]): Promise<RefinementResult> {
+  async refine(facts: MemoryFact[]): Promise<RefinementResult | null> {
     if (facts.length < 2) {
-      return EMPTY_RESULT;
+      return null;
     }
 
     const stdioScript = this.resolveStdioPath();
     if (!stdioScript) {
       this.logger?.warn("Memory MCP stdio script not found, cannot refine.");
-      return EMPTY_RESULT;
+      return null;
     }
 
     // Create temp dir with state file and MCP config
@@ -101,13 +103,13 @@ export class MemoryRefiner {
       // Spawn claude with memory tools only
       await this.spawnCli(mcpConfigPath);
 
-      // Read back state and diff against baseline
-      return this.diffState(stateFilePath, baseline);
+      // Read back the post-refinement snapshot and compute changelog stats
+      return this.buildResult(stateFilePath, baseline);
     } catch (error) {
       this.logger?.warn("Memory refinement failed.", {
         reason: error instanceof Error ? error.message : "unknown",
       });
-      return EMPTY_RESULT;
+      return null;
     } finally {
       // Cleanup temp files
       try { unlinkSync(stateFilePath); } catch { /* ignore */ }
@@ -177,42 +179,38 @@ export class MemoryRefiner {
   }
 
   /**
-   * Diff the state file against the baseline to determine what changed.
-   * Same approach as CliRuntime.syncMemoryFromFile.
+   * Read the post-refinement state file, diff against baseline for changelog stats,
+   * and return the full snapshot for atomic loading.
    */
-  private diffState(stateFilePath: string, baseline: MemorySnapshot): RefinementResult {
+  private buildResult(stateFilePath: string, baseline: MemorySnapshot): RefinementResult | null {
     const raw = readFileSync(stateFilePath, "utf-8");
-    const after: MemorySnapshot = JSON.parse(raw);
-    if (!after.v || !Array.isArray(after.facts)) return EMPTY_RESULT;
+    const snapshot: MemorySnapshot = JSON.parse(raw);
+    if (!snapshot.v || !Array.isArray(snapshot.facts)) return null;
 
     const baselineMap = new Map(baseline.facts.map((f) => [f.id, f]));
-    const afterMap = new Map(after.facts.map((f) => [f.id, f]));
+    const afterMap = new Map(snapshot.facts.map((f) => [f.id, f]));
 
-    const result: RefinementResult = { added: [], updated: [], removed: [] };
+    let added = 0;
+    let updated = 0;
+    let removed = 0;
 
-    // Added: in after but not in baseline
-    for (const fact of after.facts) {
+    for (const fact of snapshot.facts) {
       if (!baselineMap.has(fact.id)) {
-        result.added.push(fact);
+        added++;
+      } else if (baselineMap.get(fact.id)!.text !== fact.text) {
+        updated++;
       }
     }
 
-    // Updated: in both, but text differs
-    for (const [id, baseFact] of baselineMap) {
-      const afterFact = afterMap.get(id);
-      if (afterFact && afterFact.text !== baseFact.text) {
-        result.updated.push({ id, oldText: baseFact.text, newText: afterFact.text });
-      }
-    }
-
-    // Removed: in baseline but not in after
-    for (const [id, baseFact] of baselineMap) {
+    for (const id of baselineMap.keys()) {
       if (!afterMap.has(id)) {
-        result.removed.push({ id, text: baseFact.text });
+        removed++;
       }
     }
 
-    return result;
+    if (added === 0 && updated === 0 && removed === 0) return null;
+
+    return { snapshot, added, updated, removed };
   }
 }
 

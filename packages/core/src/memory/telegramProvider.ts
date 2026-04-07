@@ -1,7 +1,7 @@
 import { Logger } from "../logging";
 import { MemoryExtractor } from "./extractor";
 import { MemoryChangelog, MemoryProvider } from "./provider";
-import { MemoryFact, MemoryStore, MemoryTag } from "./store";
+import { MemoryFact, MemorySnapshot, MemoryStore, MemoryTag } from "./store";
 import { MemorySync } from "./sync";
 
 /**
@@ -118,10 +118,11 @@ export class TelegramMemoryProvider implements MemoryProvider {
     await this.sync.sendChangelog(text);
   }
 
-  async saveNewSnapshot(): Promise<void> {
+  async loadAndSaveSnapshot(snapshot: MemorySnapshot): Promise<void> {
+    this.store.load(snapshot);
     try {
-      await this.sync.saveAsNewPin(this.store.snapshot());
-      this.logger?.info("New memory snapshot pinned after refinement.");
+      await this.sync.saveAsNewPin(snapshot);
+      this.logger?.info("Memory snapshot replaced and pinned.", { facts: snapshot.facts.length });
     } catch (err) {
       this.logger?.warn("Failed to save new memory snapshot.", {
         reason: err instanceof Error ? err.message : "unknown",

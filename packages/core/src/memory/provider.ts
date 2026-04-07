@@ -1,4 +1,4 @@
-import { MemoryFact, MemoryTag } from "./store";
+import { MemoryFact, MemorySnapshot, MemoryTag } from "./store";
 
 /**
  * Abstract memory backend. Implementations handle persistence, extraction,
@@ -48,11 +48,11 @@ export interface MemoryProvider {
   sendChangelog(text: string): Promise<void>;
 
   /**
-   * Save the current state as a new snapshot/version (e.g. new pinned message).
-   * Called after refinement to create a clean checkpoint.
-   * Providers that don't support versioned snapshots can no-op.
+   * Replace the entire memory state with a new snapshot and persist it.
+   * Used after refinement to atomically swap in the consolidated state
+   * with a single write (e.g. new pinned message in Telegram).
    */
-  saveNewSnapshot(): Promise<void>;
+  loadAndSaveSnapshot(snapshot: MemorySnapshot): Promise<void>;
 }
 
 export interface MemoryChangelog {
