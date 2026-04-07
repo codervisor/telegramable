@@ -48,9 +48,18 @@ Output strict JSON with this structure (nothing else):
 If no changes are needed, output: {"keep": [], "removed": [], "added": []}
 (empty keep means "keep everything as-is")`;
 
+/** Response envelope from `claude --print --output-format json`. */
+interface CliJsonResponse {
+  result?: string;
+  is_error?: boolean;
+}
+
 /**
  * Memory refiner that uses Claude Code CLI (`claude --print`) to consolidate facts.
  * No separate API key needed — uses the same Claude installation as the agent.
+ *
+ * Uses `--output-format json` to get a structured CLI envelope, then parses the
+ * refinement JSON from the `result` field.
  */
 export class MemoryRefiner {
   constructor(
@@ -73,8 +82,8 @@ export class MemoryRefiner {
     const prompt = REFINEMENT_PROMPT.replace("{facts}", factsJson);
 
     try {
-      const text = await this.callCli(prompt);
-      return this.parseResult(text, facts);
+      const resultText = await this.callCli(prompt);
+      return this.parseResult(resultText, facts);
     } catch (error) {
       this.logger?.warn("Memory refinement failed.", {
         reason: error instanceof Error ? error.message : "unknown",
@@ -83,16 +92,44 @@ export class MemoryRefiner {
     }
   }
 
-  private callCli(prompt: string): Promise<string> {
+  /**
+   * Spawn `claude --print --bare --output-format json` and return the `result` field.
+   *
+   * --bare disables all tools (prevents memory MCP tool calls during refinement).
+   * --output-format json returns a structured envelope: { result: "...", is_error: bool, ... }
+   */
+  private async callCli(prompt: string): Promise<string> {
+    const stdout = await this.spawnCli(prompt);
+
+    // Parse the CLI JSON envelope
+    let envelope: CliJsonResponse;
+    try {
+      envelope = JSON.parse(stdout);
+    } catch {
+      throw new Error(`Claude CLI returned non-JSON output: ${stdout.slice(0, 200)}`);
+    }
+
+    if (envelope.is_error) {
+      throw new Error(`Claude CLI returned error: ${(envelope.result || "unknown").slice(0, 200)}`);
+    }
+
+    if (typeof envelope.result !== "string" || envelope.result.length === 0) {
+      throw new Error("Claude CLI returned empty result.");
+    }
+
+    return envelope.result;
+  }
+
+  private spawnCli(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const args = ["--print", "--output-format", "text", "--bare"];
+      const args = ["--print", "--output-format", "json", "--bare"];
 
       if (this.model) {
         args.push("--model", this.model);
       }
 
       args.push("--max-turns", "1");
-      args.push(prompt);
+      args.push("--", prompt);
 
       const proc = spawn("claude", args, {
         stdio: ["ignore", "pipe", "pipe"],
@@ -126,17 +163,24 @@ export class MemoryRefiner {
 
   private parseResult(text: string, currentFacts: MemoryFact[]): RefinementResult {
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) return EMPTY_RESULT;
+      // The result field contains the LLM's text response.
+      // Try direct JSON parse first, fall back to regex extraction.
+      let raw: Record<string, unknown>;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        // LLM may have wrapped JSON in markdown fences or added commentary
+        const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+        if (!jsonMatch?.[1]) return EMPTY_RESULT;
+        raw = JSON.parse(jsonMatch[1]);
+      }
 
-      const raw = JSON.parse(jsonMatch[0]);
       const result: RefinementResult = { keep: [], removed: [], added: [] };
-
       const factIds = new Set(currentFacts.map((f) => f.id));
 
       // Parse "keep" — facts to retain with updated text/tag
       if (Array.isArray(raw.keep)) {
-        for (const item of raw.keep) {
+        for (const item of raw.keep as Record<string, unknown>[]) {
           if (
             typeof item.id === "string" &&
             factIds.has(item.id) &&
@@ -146,7 +190,7 @@ export class MemoryRefiner {
           ) {
             result.keep.push({
               id: item.id,
-              text: item.text.slice(0, 80),
+              text: (item.text as string).slice(0, 80),
               tag: item.tag as MemoryTag,
             });
           }
@@ -165,7 +209,7 @@ export class MemoryRefiner {
 
       // Parse "added" — new synthesized facts
       if (Array.isArray(raw.added)) {
-        for (const item of raw.added) {
+        for (const item of raw.added as Record<string, unknown>[]) {
           if (
             typeof item.tag === "string" &&
             VALID_TAGS.has(item.tag as MemoryTag) &&
@@ -173,7 +217,7 @@ export class MemoryRefiner {
           ) {
             result.added.push({
               tag: item.tag as MemoryTag,
-              text: item.text.slice(0, 80),
+              text: (item.text as string).slice(0, 80),
             });
           }
         }
