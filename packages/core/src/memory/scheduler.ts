@@ -3,7 +3,7 @@ import { MemoryProvider } from "./provider";
 import { MemoryRefiner, RefinementResult } from "./refiner";
 
 export interface RefinementSchedulerConfig {
-  /** Interval between automatic refinements in milliseconds. Default: 24 hours. */
+  /** Interval between automatic refinements in milliseconds. Default: 3600000 (1h). */
   intervalMs: number;
   /** Trigger refinement when fact count reaches this threshold. 0 = disabled. Default: 50. */
   factThreshold: number;
@@ -15,7 +15,6 @@ const DEFAULT_CONFIG: RefinementSchedulerConfig = {
 };
 
 export interface RefinementChangelog {
-  kept: number;
   removed: number;
   added: number;
   updated: number;
@@ -27,7 +26,7 @@ export interface RefinementChangelog {
  * Schedules periodic memory refinement.
  *
  * Triggers:
- * 1. Time-based: runs every `intervalMs` (default 24h)
+ * 1. Time-based: runs every `intervalMs` (default 1h)
  * 2. Threshold-based: runs when fact count exceeds `factThreshold` (checked after each ingest)
  * 3. On-demand: via `runNow()`
  */
@@ -120,7 +119,7 @@ export class MemoryRefinementScheduler {
         return null;
       }
 
-      const changelog = await this.applyResult(result);
+      const changelog = await this.applyResult(result, facts.length);
       this.lastRefinedAt = new Date();
 
       this.logger?.info("Memory refinement completed.", { ...changelog });
@@ -140,36 +139,33 @@ export class MemoryRefinementScheduler {
     return this.lastRefinedAt;
   }
 
-  private async applyResult(result: RefinementResult): Promise<RefinementChangelog> {
-    const beforeCount = this.provider.all().length;
-    let updated = 0;
-
-    // Apply updates to kept facts
-    for (const item of result.keep) {
-      const existing = this.provider.get(item.id);
-      if (existing && (existing.text !== item.text || existing.tag !== item.tag)) {
-        await this.provider.update(item.id, item.text);
-        updated++;
-      }
+  /**
+   * Apply the diff from the refiner to the live memory provider.
+   * The refiner already ran the tools against a snapshot — we replay
+   * the same changes against the live store.
+   */
+  private async applyResult(result: RefinementResult, beforeCount: number): Promise<RefinementChangelog> {
+    // Apply updates
+    for (const item of result.updated) {
+      await this.provider.update(item.id, item.newText);
     }
 
-    // Remove facts
-    for (const id of result.removed) {
-      await this.provider.remove(id);
+    // Apply removals
+    for (const item of result.removed) {
+      await this.provider.remove(item.id);
     }
 
-    // Add new synthesized facts
-    for (const item of result.added) {
-      await this.provider.add(item.tag, item.text);
+    // Apply additions
+    for (const fact of result.added) {
+      await this.provider.add(fact.tag, fact.text);
     }
 
     const afterCount = this.provider.all().length;
 
     const changelog: RefinementChangelog = {
-      kept: result.keep.length,
       removed: result.removed.length,
       added: result.added.length,
-      updated,
+      updated: result.updated.length,
       beforeCount,
       afterCount,
     };
@@ -186,7 +182,7 @@ export class MemoryRefinementScheduler {
 }
 
 function isNoOp(result: RefinementResult): boolean {
-  return result.keep.length === 0 && result.removed.length === 0 && result.added.length === 0;
+  return result.added.length === 0 && result.updated.length === 0 && result.removed.length === 0;
 }
 
 function formatRefinementChangelog(cl: RefinementChangelog): string {
