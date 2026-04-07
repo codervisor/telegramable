@@ -468,9 +468,16 @@ test("CliRuntime does not emit duplicate tool-use from assistant message", async
   await runtime.execute(msg(), "exec-stream-4", eventBus);
 
   const toolUseEvents = events.filter((e) => e.type === "tool-use");
-  // The helper emits both stream_event (content_block_start tool_use) and assistant message
-  // with tool_use blocks. Only the stream_event should produce a tool-use event.
-  assert.equal(toolUseEvents.length, 1, "should emit exactly one tool-use event (no duplicates from assistant message)");
+  // Two tool-use events per tool: one at content_block_start (name only, for immediate display)
+  // and one at content_block_stop (with accumulated input from input_json_delta).
+  // The assistant message should NOT produce additional tool-use events.
+  assert.equal(toolUseEvents.length, 2, "should emit two tool-use events per tool (start + enriched), none from assistant message");
+  // First event has name only
+  assert.equal(toolUseEvents[0].payload?.toolName, "Read");
+  assert.equal(toolUseEvents[0].payload?.toolInput, undefined);
+  // Second event has full input from accumulated input_json_delta
+  assert.equal(toolUseEvents[1].payload?.toolName, "Read");
+  assert.deepEqual(toolUseEvents[1].payload?.toolInput, { file_path: "/tmp/test.txt" });
 });
 
 test("CliRuntime defaults to stream-json when outputFormat is unset", async () => {
