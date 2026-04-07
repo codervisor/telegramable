@@ -38,6 +38,11 @@ export class CliRuntime implements Runtime {
   /** Prevent repeated root-fallback warnings from flooding logs. */
   private rootWarningLogged = false;
 
+  /** Resolved output format — defaults to stream-json inside CliRuntime. */
+  private get resolvedOutputFormat(): "text" | "json" | "stream-json" {
+    return this.config.outputFormat ?? "stream-json";
+  }
+
   constructor(private readonly config: AgentConfig, private readonly logger: Logger, options?: CliRuntimeOptions) {
     if (options?.dataDir) {
       this.fileStore = new FileSessionStore(options.dataDir, "cli-sessions.json", logger);
@@ -115,14 +120,12 @@ export class CliRuntime implements Runtime {
       args.push("--max-budget-usd", String(this.config.maxBudgetUsd));
     }
 
-    if (this.config.outputFormat) {
-      args.push("--output-format", this.config.outputFormat);
-    }
+    args.push("--output-format", this.resolvedOutputFormat);
 
     // When using stream-json, we need --verbose and --include-partial-messages
     // so the CLI emits streaming events (tool_use, text_delta, etc.) rather
     // than just the final result.
-    if (this.config.outputFormat === "stream-json") {
+    if (this.resolvedOutputFormat === "stream-json") {
       args.push("--verbose", "--include-partial-messages");
     }
 
@@ -439,7 +442,7 @@ export class CliRuntime implements Runtime {
         const text = chunk.toString();
         stdoutChunks.push(text);
 
-        if (this.config.outputFormat === "stream-json") {
+        if (this.resolvedOutputFormat === "stream-json") {
           // Parse NDJSON: buffer incoming text, process complete lines
           ndjsonBuffer += text;
           const lines = ndjsonBuffer.split("\n");
@@ -520,6 +523,17 @@ export class CliRuntime implements Runtime {
         clearInterval(heartbeat);
         cleanupPermissionSub();
 
+        // Flush any remaining NDJSON buffer (last line without trailing newline)
+        if (this.resolvedOutputFormat === "stream-json" && ndjsonBuffer.trim()) {
+          try {
+            const parsed = JSON.parse(ndjsonBuffer.trim());
+            this.handleStreamJsonEvent(parsed, executionId, message, eventBus);
+          } catch {
+            // Not valid JSON — ignore on close
+          }
+          ndjsonBuffer = "";
+        }
+
         const stderr = stderrChunks.join("").trim();
 
         this.logger.info("CLI runtime exited.", {
@@ -572,7 +586,7 @@ export class CliRuntime implements Runtime {
         // When using stream-json, extract the text result from the NDJSON output.
         // The raw stdout is NDJSON lines, not the actual response text.
         let response: string;
-        if (this.config.outputFormat === "stream-json") {
+        if (this.resolvedOutputFormat === "stream-json") {
           response = this.extractResultFromStreamJson(rawOutput);
         } else {
           response = rawOutput;
@@ -622,16 +636,20 @@ export class CliRuntime implements Runtime {
   /**
    * Extract the final text result from stream-json NDJSON output.
    * Looks for the "result" line which contains the final response text,
-   * or falls back to accumulating text from assistant message content blocks.
+   * falls back to accumulating text from assistant message content blocks,
+   * and finally returns the raw output if no JSON was parsed.
    */
   private extractResultFromStreamJson(rawOutput: string): string {
     const lines = rawOutput.split("\n");
+    let hasAnyJson = false;
+
     // Try to find a "result" message which contains the final text
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
         const parsed = JSON.parse(trimmed);
+        hasAnyJson = true;
         if (parsed.type === "result" && typeof parsed.result === "string") {
           return parsed.result;
         }
@@ -639,6 +657,7 @@ export class CliRuntime implements Runtime {
         // skip non-JSON lines
       }
     }
+
     // Fallback: accumulate text from assistant messages
     const texts: string[] = [];
     for (const line of lines) {
@@ -660,7 +679,12 @@ export class CliRuntime implements Runtime {
         // skip
       }
     }
-    return texts.join("\n");
+    if (texts.length > 0) return texts.join("\n");
+
+    // No JSON found at all (e.g. non-Claude command) — return raw output
+    if (!hasAnyJson) return rawOutput;
+
+    return "";
   }
 
   /**
@@ -722,30 +746,11 @@ export class CliRuntime implements Runtime {
       return;
     }
 
-    // "assistant" messages contain the complete turn — extract text if we
-    // haven't already streamed it via deltas (fallback for non-partial mode).
+    // "assistant" messages contain the complete turn. We intentionally skip
+    // them here because tool-use and text events have already been emitted
+    // via the stream_event path (--include-partial-messages is always set).
+    // Emitting again would cause duplicate tool steps in the hub.
     if (type === "assistant") {
-      const msg = parsed.message as Record<string, unknown> | undefined;
-      const content = msg?.content as Array<Record<string, unknown>> | undefined;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === "tool_use") {
-            eventBus.emit({
-              executionId,
-              channelId: message.channelId,
-              chatId: message.chatId,
-              type: "tool-use",
-              timestamp: Date.now(),
-              payload: {
-                toolName: block.name as string,
-                toolInput: block.input as Record<string, unknown> | undefined,
-              }
-            });
-          }
-          // Text blocks from complete assistant messages are not emitted here
-          // to avoid duplication with stream_event text_delta already sent.
-        }
-      }
       return;
     }
 

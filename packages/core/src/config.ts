@@ -207,7 +207,7 @@ const parseAgents = (): AgentConfig[] => {
     disallowedTools: splitCsv(process.env.DISALLOWED_TOOLS),
     maxBudgetUsd: maxBudgetUsd && Number.isFinite(maxBudgetUsd) ? maxBudgetUsd : undefined,
     permissionMode: parsePermissionMode(process.env.PERMISSION_MODE),
-    outputFormat: parseOutputFormat(process.env.OUTPUT_FORMAT) || "stream-json",
+    outputFormat: parseOutputFormat(process.env.OUTPUT_FORMAT),
     bare: process.env.BARE === "true"
   }];
 };
