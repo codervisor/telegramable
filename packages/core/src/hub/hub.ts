@@ -1068,9 +1068,9 @@ export class ChannelHub {
       const finalized = draft.text.slice(0, splitAt);
       const overflow = draft.text.slice(splitAt).replace(/^\n+/, "");
 
-      // Finalize the current message with the full first chunk
-      if (draft.draftId && !draft.draftFailed && adapter.sendMessageDraft) {
-        await adapter.sendMessageDraft(event.chatId, draft.draftId, markdownToTelegramHtml(finalized), { threadId: topicId }).catch(() => {});
+      // Finalize the current message — use editMessage to convert draft to permanent
+      if (draft.draftId && !draft.draftFailed && draft.messageId && adapter.editMessage) {
+        await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
       } else if (draft.messageId && adapter.editMessage) {
         await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
       }
@@ -1145,9 +1145,10 @@ export class ChannelHub {
       }
     };
 
-    // Final flush via sendMessageDraft if we were using drafts
-    if (draft.draftId && !draft.draftFailed && adapter.sendMessageDraft) {
-      await adapter.sendMessageDraft(chatId, draft.draftId, markdownToTelegramHtml(chunks[0]), { threadId: topicId }).catch(() => {});
+    // Final flush: convert draft to a permanent message via editMessage so it
+    // doesn't disappear once the draft stream ends.
+    if (draft.draftId && !draft.draftFailed && draft.messageId && adapter.editMessage) {
+      await adapter.editMessage(chatId, draft.messageId, markdownToTelegramHtml(chunks[0])).catch(() => {});
       for (let i = 1; i < chunks.length; i++) {
         await sendChunk(markdownToTelegramHtml(chunks[i]));
       }
