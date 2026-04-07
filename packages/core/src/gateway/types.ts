@@ -46,4 +46,6 @@ export interface IMAdapter {
   closeForumTopic?: (chatId: string, topicId: number) => Promise<void>;
   sendChatAction?: (chatId: string, action: string, options?: { threadId?: number }) => Promise<void>;
   setMessageReaction?: (chatId: string, messageId: number, emoji: string | null) => Promise<void>;
+  /** Send a message draft for native Telegram streaming (Bot API 9.3+, private chats only). */
+  sendMessageDraft?: (chatId: string, draftId: number, text: string, options?: { threadId?: number }) => Promise<number>;
 }

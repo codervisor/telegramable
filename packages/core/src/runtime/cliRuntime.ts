@@ -38,6 +38,9 @@ export class CliRuntime implements Runtime {
   /** Prevent repeated root-fallback warnings from flooding logs. */
   private rootWarningLogged = false;
 
+  /** Track in-flight tool blocks to accumulate input from input_json_delta. */
+  private pendingToolBlocks = new Map<string, { name: string; inputJson: string; index: number }>(); // executionId → current block
+
   /** Resolved output format — defaults to stream-json inside CliRuntime. */
   private get resolvedOutputFormat(): "text" | "json" | "stream-json" {
     return this.config.outputFormat ?? "stream-json";
@@ -712,7 +715,14 @@ export class CliRuntime implements Runtime {
       if (eventType === "content_block_start") {
         const block = event.content_block as Record<string, unknown> | undefined;
         if (block?.type === "tool_use") {
-          // Emit tool-use event so the hub can display tool activity
+          const index = typeof event.index === "number" ? event.index : 0;
+          // Start accumulating input for this tool block
+          this.pendingToolBlocks.set(executionId, {
+            name: block.name as string,
+            inputJson: "",
+            index,
+          });
+          // Emit immediate tool-use with name only so the hub shows activity right away
           eventBus.emit({
             executionId,
             channelId: message.channelId,
@@ -721,7 +731,6 @@ export class CliRuntime implements Runtime {
             timestamp: Date.now(),
             payload: {
               toolName: block.name as string,
-              toolInput: block.input as Record<string, unknown> | undefined,
             }
           });
         }
@@ -739,8 +748,35 @@ export class CliRuntime implements Runtime {
               payload: { text }
             });
           }
+        } else if (delta?.type === "input_json_delta") {
+          // Accumulate tool input JSON fragments
+          const pending = this.pendingToolBlocks.get(executionId);
+          if (pending) {
+            pending.inputJson += (delta.partial_json as string) || "";
+          }
         }
-        // input_json_delta events are ignored — the hub doesn't need streaming tool input
+      } else if (eventType === "content_block_stop") {
+        // Tool block complete — emit enriched tool-use event with parsed input
+        const pending = this.pendingToolBlocks.get(executionId);
+        if (pending && pending.inputJson) {
+          try {
+            const toolInput = JSON.parse(pending.inputJson) as Record<string, unknown>;
+            eventBus.emit({
+              executionId,
+              channelId: message.channelId,
+              chatId: message.chatId,
+              type: "tool-use",
+              timestamp: Date.now(),
+              payload: {
+                toolName: pending.name,
+                toolInput,
+              }
+            });
+          } catch {
+            // Malformed JSON — the initial tool-use event already showed the name
+          }
+          this.pendingToolBlocks.delete(executionId);
+        }
       }
       // Other stream events (message_start, message_stop, etc.) are ignored
       return;

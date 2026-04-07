@@ -227,7 +227,8 @@ export class ChannelHub {
   private readonly chunkThrottlers = new Map<string, ChunkThrottler>();
   private readonly permissionBridge: PermissionBridge;
   private readonly topicMap = new Map<string, number>(); // "channelId:chatId:executionId" → topicId
-  private readonly streamDrafts = new Map<string, { text: string; messageId?: number }>(); // for streaming text accumulation
+  private readonly streamDrafts = new Map<string, { text: string; messageId?: number; draftId?: number; draftFailed?: boolean }>(); // for streaming text accumulation
+  private draftIdCounter = 0; // monotonic counter for Telegram draft IDs
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
   private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean; sendingPromise?: Promise<void> }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
@@ -692,6 +693,10 @@ export class ChannelHub {
 
     const key = `${adapter.id}:${chatId}:${executionId}`;
 
+    // Clear any existing interval to prevent leaked timers from piling up
+    const existing = this.typingIntervals.get(key);
+    if (existing) clearInterval(existing);
+
     // Send immediately, then repeat every 4s (Telegram typing expires after ~5s)
     const sendTyping = () => {
       adapter.sendChatAction!(chatId, "typing", { threadId: topicId }).catch(() => {
@@ -746,14 +751,17 @@ export class ChannelHub {
 
     // Handle tool-use — show activity and restart typing indicator
     if (event.type === "tool-use") {
+      // If we were streaming text, flush the current draft so the text message
+      // is finalized ABOVE the upcoming tool activity messages.
+      await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId, topicId);
       await this.forwardToolActivity(adapter, event, topicId);
       // Restart typing indicator so user sees activity during tool execution
       this.startTypingIndicator(adapter, event.chatId, event.executionId, topicId);
       return;
     }
 
-    // Handle streaming text — accumulate and edit message in-place
-    if (event.type === "stream-text") {
+    // Handle streaming text — accumulate and send via sendMessageDraft (or edit fallback)
+    if (event.type === "stream-text" || event.type === "stdout") {
       // Stop typing indicator once we start streaming actual text
       this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
       // Finalize tool activity message into a compact summary
@@ -778,7 +786,7 @@ export class ChannelHub {
       }
 
       // Flush stream draft and check if we already streamed the response
-      const flushedContent = await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId);
+      const flushedContent = await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId, topicId);
 
       // Skip sending duplicate response if we already streamed it in-place
       if (flushedContent && event.type === "complete") {
@@ -915,7 +923,14 @@ export class ChannelHub {
       this.toolActivityMessages.set(activityKey, activity);
     }
 
-    activity.tools.push({ name: toolName, input: toolInput });
+    // If the last tool has the same name and no input yet, this is an enriched
+    // update (input arrived via input_json_delta) — update in-place instead of duplicating.
+    const lastTool = activity.tools[activity.tools.length - 1];
+    if (lastTool && lastTool.name === toolName && !lastTool.input && toolInput && Object.keys(toolInput).length > 0) {
+      lastTool.input = toolInput;
+    } else {
+      activity.tools.push({ name: toolName, input: toolInput });
+    }
 
     if (activity.promoted) {
       // Wait for any in-flight initial send so messageId is set before editing
@@ -1045,8 +1060,7 @@ export class ChannelHub {
     draft.text += text;
 
     // If accumulated text exceeds the limit, finalize current message and start a new one
-    if (draft.text.length > TELEGRAM_MSG_LIMIT && draft.messageId && adapter.editMessage) {
-      // Find a clean split point in the current draft
+    if (draft.text.length > TELEGRAM_MSG_LIMIT && (draft.messageId || draft.draftId)) {
       let splitAt = draft.text.lastIndexOf("\n\n", TELEGRAM_MSG_LIMIT);
       if (splitAt <= 0) splitAt = draft.text.lastIndexOf("\n", TELEGRAM_MSG_LIMIT);
       if (splitAt <= 0) splitAt = TELEGRAM_MSG_LIMIT;
@@ -1054,24 +1068,48 @@ export class ChannelHub {
       const finalized = draft.text.slice(0, splitAt);
       const overflow = draft.text.slice(splitAt).replace(/^\n+/, "");
 
-      // Finalize the current message with the first chunk
-      await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
+      // Finalize the current message with the full first chunk
+      if (draft.draftId && !draft.draftFailed && adapter.sendMessageDraft) {
+        await adapter.sendMessageDraft(event.chatId, draft.draftId, markdownToTelegramHtml(finalized), { threadId: topicId }).catch(() => {});
+      } else if (draft.messageId && adapter.editMessage) {
+        await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
+      }
 
-      // Reset draft for the overflow — next update will create a new message
+      // Reset draft for the overflow — next update will create a new message/draft
       draft.text = overflow;
       draft.messageId = undefined;
+      draft.draftId = undefined;
+      draft.draftFailed = false;
       return;
     }
 
-    // Throttle edits: only update every ~500 chars or if we haven't sent yet
+    // Try native sendMessageDraft first (smooth streaming, no rate limits)
+    if (adapter.sendMessageDraft && !draft.draftFailed) {
+      if (!draft.draftId) {
+        draft.draftId = ++this.draftIdCounter;
+      }
+      try {
+        const msgId = await adapter.sendMessageDraft(
+          event.chatId,
+          draft.draftId,
+          markdownToTelegramHtml(draft.text.length <= TELEGRAM_MSG_LIMIT ? draft.text : draft.text.slice(0, TELEGRAM_MSG_LIMIT)),
+          { threadId: topicId }
+        );
+        draft.messageId = msgId;
+        return;
+      } catch {
+        // sendMessageDraft may fail in group chats — fall back to edit pattern
+        draft.draftFailed = true;
+        draft.draftId = undefined;
+      }
+    }
+
+    // Fallback: send + edit pattern (throttled to avoid rate limits)
     const shouldUpdate = !draft.messageId || draft.text.length % 500 < text.length;
 
     if (shouldUpdate && adapter.editMessage && draft.messageId) {
-      await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(draft.text)).catch(() => {
-        // Edit might fail if message was deleted; non-critical
-      });
+      await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(draft.text)).catch(() => {});
     } else if (!draft.messageId && draft.text.trim()) {
-      // Send initial message (only if non-empty after trimming)
       if (adapter.sendMessageWithMarkup) {
         const messageId = await adapter.sendMessageWithMarkup(
           event.chatId,
@@ -1086,7 +1124,7 @@ export class ChannelHub {
     }
   }
 
-  private async flushStreamDraft(adapter: IMAdapter, channelId: string, chatId: string, executionId: string): Promise<boolean> {
+  private async flushStreamDraft(adapter: IMAdapter, channelId: string, chatId: string, executionId: string, topicId?: number): Promise<boolean> {
     const draftKey = `${channelId}:${chatId}:${executionId}`;
     const draft = this.streamDrafts.get(draftKey);
     if (!draft) return false;
@@ -1098,7 +1136,13 @@ export class ChannelHub {
 
     const chunks = splitMessage(draft.text);
 
-    if (draft.messageId && adapter.editMessage) {
+    // Final flush via sendMessageDraft if we were using drafts
+    if (draft.draftId && !draft.draftFailed && adapter.sendMessageDraft) {
+      await adapter.sendMessageDraft(chatId, draft.draftId, markdownToTelegramHtml(chunks[0]), { threadId: topicId }).catch(() => {});
+      for (let i = 1; i < chunks.length; i++) {
+        await adapter.sendMessage(chatId, markdownToTelegramHtml(chunks[i]));
+      }
+    } else if (draft.messageId && adapter.editMessage) {
       // Edit existing message with first chunk
       await adapter.editMessage(chatId, draft.messageId, markdownToTelegramHtml(chunks[0])).catch(() => {});
       // Send remaining chunks as new messages
