@@ -13,6 +13,7 @@ const logger = createLogger("error");
 // Helper script that accepts a mode arg and ignores extra args (--session-id etc.)
 const TEST_CMD = path.resolve(__dirname, "helpers/test-cmd.sh");
 const STALE_SESSION_CMD = path.resolve(__dirname, "helpers/stale-session-cmd.sh");
+const STREAM_JSON_CMD = path.resolve(__dirname, "helpers/stream-json-cmd.sh");
 
 const msg = (overrides?: Partial<IMMessage>): IMMessage => ({
   channelId: "telegram",
@@ -413,4 +414,76 @@ test("CliRuntime events carry correct channelId, chatId, executionId", async () 
     assert.equal(event.chatId, "c-99", `${event.type} should have chatId=c-99`);
     assert.equal(event.executionId, "exec-11", `${event.type} should have correct executionId`);
   }
+});
+
+// ---------- stream-json parsing ----------
+
+test("CliRuntime emits tool-use events from stream-json NDJSON", async () => {
+  const config: AgentConfig = { name: "stream-agent", command: STREAM_JSON_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-stream-1", eventBus);
+
+  const toolUseEvents = events.filter((e) => e.type === "tool-use");
+  assert.ok(toolUseEvents.length > 0, "should emit at least one tool-use event");
+  assert.equal(toolUseEvents[0].payload?.toolName, "Read", "tool name should be Read");
+});
+
+test("CliRuntime emits stream-text events from stream-json text_delta", async () => {
+  const config: AgentConfig = { name: "stream-agent", command: STREAM_JSON_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-stream-2", eventBus);
+
+  const textEvents = events.filter((e) => e.type === "stream-text");
+  const combined = textEvents.map((e) => e.payload?.text).join("");
+  assert.ok(combined.includes("The project "), "should stream text deltas");
+  assert.ok(combined.includes("telegramable."), "should stream all text delta chunks");
+});
+
+test("CliRuntime extracts result text from stream-json for complete event", async () => {
+  const config: AgentConfig = { name: "stream-agent", command: STREAM_JSON_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-stream-3", eventBus);
+
+  const complete = events.find((e) => e.type === "complete");
+  assert.ok(complete, "should emit complete event");
+  assert.equal(complete?.payload?.response, "The project name is telegramable.",
+    "complete response should be extracted from result line, not raw NDJSON");
+});
+
+test("CliRuntime does not emit duplicate tool-use from assistant message", async () => {
+  const config: AgentConfig = { name: "stream-agent", command: STREAM_JSON_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-stream-4", eventBus);
+
+  const toolUseEvents = events.filter((e) => e.type === "tool-use");
+  // The helper emits both stream_event (content_block_start tool_use) and assistant message
+  // with tool_use blocks. Only the stream_event should produce a tool-use event.
+  assert.equal(toolUseEvents.length, 1, "should emit exactly one tool-use event (no duplicates from assistant message)");
+});
+
+test("CliRuntime defaults to stream-json when outputFormat is unset", async () => {
+  // When outputFormat is undefined, CliRuntime should still use stream-json
+  const config: AgentConfig = { name: "default-stream-agent", command: "echo" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-stream-5", eventBus);
+
+  const stdout = events.filter((e) => e.type === "stream-text").map((e) => e.payload?.text).join("");
+  assert.ok(stdout.includes("--output-format stream-json"), "should default to stream-json");
+  assert.ok(stdout.includes("--verbose"), "should include --verbose for stream-json");
+  assert.ok(stdout.includes("--include-partial-messages"), "should include --include-partial-messages for stream-json");
 });
