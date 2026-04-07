@@ -85,7 +85,7 @@ export class MemoryRefiner {
 
   private callCli(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const args = ["--print", "--output-format", "text"];
+      const args = ["--print", "--output-format", "text", "--bare"];
 
       if (this.model) {
         args.push("--model", this.model);
