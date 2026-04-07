@@ -167,6 +167,7 @@ test("ChannelHub prepends replyToText context to routed message", async () => {
 });
 
 test("ChannelHub sends execution summary with tool count on completion", async () => {
+  process.env.SHOW_EXECUTION_SUMMARY = "true";
   const eventBus = new EventBus();
   const logger = createLogger("error");
   const adapter = new MockAdapter("telegram");
@@ -202,6 +203,7 @@ test("ChannelHub sends execution summary with tool count on completion", async (
   assert.ok(summaryMsg!.text.includes("✅"), "should use success icon for complete status");
 
   await hub.stop();
+  delete process.env.SHOW_EXECUTION_SUMMARY;
 });
 
 test("ChannelHub suppresses execution summary for quick runs with no tools", async () => {
@@ -236,6 +238,7 @@ test("ChannelHub suppresses execution summary for quick runs with no tools", asy
 });
 
 test("ChannelHub sends error icon in execution summary on failure", async () => {
+  process.env.SHOW_EXECUTION_SUMMARY = "true";
   const eventBus = new EventBus();
   const logger = createLogger("error");
   const adapter = new MockAdapter("telegram");
@@ -263,6 +266,7 @@ test("ChannelHub sends error icon in execution summary on failure", async () => 
   assert.ok(summaryMsg!.text.includes("❌"), "should use error icon for failed execution");
 
   await hub.stop();
+  delete process.env.SHOW_EXECUTION_SUMMARY;
 });
 
 test("ChannelHub finalizes tool activity even when promotion send is in-flight", async () => {
@@ -363,6 +367,7 @@ test("ChannelHub finalizes streamed draft via editMessage (not sendMessageDraft)
 });
 
 test("ChannelHub sends execution summary to forum topic thread", async () => {
+  process.env.SHOW_EXECUTION_SUMMARY = "true";
   const eventBus = new EventBus();
   const logger = createLogger("error");
   const adapter = new MockAdapter("telegram");
@@ -399,9 +404,11 @@ test("ChannelHub sends execution summary to forum topic thread", async () => {
   assert.ok(adapter.closedTopics.length > 0, "should close forum topic after sending summary");
 
   await hub.stop();
+  delete process.env.SHOW_EXECUTION_SUMMARY;
 });
 
 test("ChannelHub sends execution summary before flushing streamed draft to prevent ordering issues", async () => {
+  process.env.SHOW_EXECUTION_SUMMARY = "true";
   const eventBus = new EventBus();
   const logger = createLogger("error");
   const adapter = new MockAdapter("telegram");
@@ -447,4 +454,5 @@ test("ChannelHub sends execution summary before flushing streamed draft to preve
   );
 
   await hub.stop();
+  delete process.env.SHOW_EXECUTION_SUMMARY;
 });

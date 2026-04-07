@@ -850,6 +850,9 @@ export class ChannelHub {
 
   /** Send a compact execution summary (duration, tool count) after completion. */
   private async sendExecutionSummary(adapter: IMAdapter, event: ExecutionEvent, topicId?: number): Promise<void> {
+    // Opt-in via SHOW_EXECUTION_SUMMARY=true (disabled by default)
+    if (process.env.SHOW_EXECUTION_SUMMARY?.toLowerCase() !== "true") return;
+
     const record = this.executionRegistry.get(event.executionId);
     if (!record) return;
 
