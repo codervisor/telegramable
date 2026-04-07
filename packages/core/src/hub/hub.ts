@@ -1069,9 +1069,7 @@ export class ChannelHub {
       const overflow = draft.text.slice(splitAt).replace(/^\n+/, "");
 
       // Finalize the current message — use editMessage to convert draft to permanent
-      if (draft.draftId && !draft.draftFailed && draft.messageId && adapter.editMessage) {
-        await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
-      } else if (draft.messageId && adapter.editMessage) {
+      if (draft.messageId && adapter.editMessage) {
         await adapter.editMessage(event.chatId, draft.messageId, markdownToTelegramHtml(finalized)).catch(() => {});
       }
 

@@ -60,6 +60,14 @@ export class MockAdapter implements IMAdapter {
     this.closedTopics.push({ chatId, topicId });
   }
 
+  public draftMessages: Array<{ chatId: string; draftId: number; text: string; messageId: number; options?: { threadId?: number } }> = [];
+
+  async sendMessageDraft(chatId: string, draftId: number, text: string, options?: { threadId?: number }): Promise<number> {
+    const messageId = this.nextMessageId++;
+    this.draftMessages.push({ chatId, draftId, text, messageId, options });
+    return messageId;
+  }
+
   async stop(): Promise<void> {
     this.handler = undefined;
   }

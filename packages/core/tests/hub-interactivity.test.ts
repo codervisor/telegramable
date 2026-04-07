@@ -319,6 +319,49 @@ test("ChannelHub finalizes tool activity even when promotion send is in-flight",
   await hub.stop();
 });
 
+test("ChannelHub finalizes streamed draft via editMessage (not sendMessageDraft) so message persists", async () => {
+  const eventBus = new EventBus();
+  const logger = createLogger("error");
+  const adapter = new MockAdapter("telegram");
+
+  const runtime: Runtime = {
+    async execute(message, executionId, bus): Promise<void> {
+      const base = { executionId, channelId: message.channelId, chatId: message.chatId };
+
+      bus.emit({ ...base, type: "start", timestamp: 1000, payload: { agentName: "claude" } });
+
+      // Stream text to trigger sendMessageDraft during streaming
+      bus.emit({ ...base, type: "stream-text", timestamp: 2000, payload: { text: "Hello from the stream" } });
+      bus.emit({ ...base, type: "stream-text", timestamp: 2500, payload: { text: " — more content here" } });
+
+      // Complete triggers flushStreamDraft
+      bus.emit({ ...base, type: "complete", timestamp: 8000, payload: { response: "Hello from the stream — more content here" } });
+    }
+  };
+
+  const router: Router = { select(message) { return { runtime, message }; } };
+  const hub = new ChannelHub([adapter], router, eventBus, logger);
+  await hub.start();
+
+  await adapter.simulateIncoming({ channelId: "telegram", chatId: "chat-1", text: "do work" });
+  await sleep(50);
+
+  // During streaming, sendMessageDraft should have been called to show the draft
+  assert.ok(adapter.draftMessages.length > 0, "should use sendMessageDraft during streaming");
+
+  // On flush, editMessage should have been called to make the draft permanent
+  const finalEdit = adapter.editedMessages.find((m) =>
+    m.text.includes("Hello from the stream")
+  );
+  assert.ok(finalEdit, "flushStreamDraft should use editMessage to make draft permanent");
+
+  // The draft messageId from streaming should match the editMessage messageId
+  const lastDraft = adapter.draftMessages[adapter.draftMessages.length - 1];
+  assert.equal(finalEdit!.messageId, lastDraft.messageId, "should edit the same message that was created as a draft");
+
+  await hub.stop();
+});
+
 test("ChannelHub sends execution summary to forum topic thread", async () => {
   const eventBus = new EventBus();
   const logger = createLogger("error");
