@@ -1,4 +1,7 @@
 import { randomUUID } from "crypto";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { basename, join } from "path";
+import { tmpdir } from "os";
 import { EventBus } from "../events/eventBus";
 import { ExecutionEvent } from "../events/types";
 import { IMAdapter, IMAdapterStartOptions, IMMessage } from "../gateway/types";
@@ -239,6 +242,7 @@ export class ChannelHub {
   private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean; sendingPromise?: Promise<void> }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private readonly reactionMessageIds = new Map<string, number>(); // executionId → source messageId for clearing reactions
+  private readonly downloadedFiles = new Map<string, string[]>(); // executionId → local file paths to clean up
   private unsubscribeEvents?: () => void;
   private readonly sudoWatcher?: SudoWatcher;
 
@@ -308,6 +312,11 @@ export class ChannelHub {
     this.toolActivityMessages.clear();
     this.eventQueues.clear();
     this.reactionMessageIds.clear();
+
+    // Clean up any downloaded files from in-flight executions
+    for (const executionId of Array.from(this.downloadedFiles.keys())) {
+      this.cleanupDownloadedFiles(executionId);
+    }
 
     await Promise.all(Array.from(this.adapters.values()).map((adapter) => adapter.stop()));
     this.logger.info("ChannelHub stopped.");
@@ -387,11 +396,38 @@ export class ChannelHub {
     const replyContext = message.replyToText
       ? truncate(message.replyToText, MAX_REPLY_CONTEXT)
       : undefined;
-    const enrichedMessage = replyContext
+    let enrichedMessage: IMMessage = replyContext
       ? { ...message, text: `[Quoted message]\n${replyContext}\n[End quoted message]\n\n${message.text}` }
       : message;
 
     const executionId = randomUUID();
+
+    // Download any attached file and make it accessible to the agent as a local path.
+    // Prepend the path to the prompt so the agent knows where to find it.
+    if (message.fileId && adapter?.getFileUrl) {
+      try {
+        const fileUrl = await adapter.getFileUrl(message.fileId);
+        const localPath = await this.downloadAndSaveFile(fileUrl, executionId, message.fileName);
+        const tracked = this.downloadedFiles.get(executionId) ?? [];
+        tracked.push(localPath);
+        this.downloadedFiles.set(executionId, tracked);
+        const fileNote = `[Attached file: ${localPath}]`;
+        enrichedMessage = {
+          ...enrichedMessage,
+          text: enrichedMessage.text.trim()
+            ? `${fileNote}\n\n${enrichedMessage.text}`
+            : fileNote,
+        };
+        this.logger.debug("File downloaded for agent.", { executionId, localPath });
+      } catch (error) {
+        this.logger.warn("Failed to download attached file.", {
+          executionId,
+          fileId: message.fileId,
+          reason: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
+
     const { runtime, message: routedMessage } = this.router.select(enrichedMessage);
 
     if (adapter) {
@@ -628,6 +664,36 @@ export class ChannelHub {
     await ack();
   }
 
+  /** Download a Telegram file and save it to a per-execution temp directory. */
+  private async downloadAndSaveFile(
+    fileUrl: string,
+    executionId: string,
+    fileName?: string
+  ): Promise<string> {
+    const dir = join(tmpdir(), "telegramable-uploads", executionId);
+    mkdirSync(dir, { recursive: true });
+    const safeName = fileName
+      ? basename(fileName).replace(/[^\w.\-]/g, "_").slice(0, 100) || "attachment"
+      : "attachment";
+    const localPath = join(dir, safeName);
+    const response = await fetch(fileUrl);
+    if (!response.ok) throw new Error(`Failed to fetch file: HTTP ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    writeFileSync(localPath, buffer);
+    return localPath;
+  }
+
+  /** Remove all temp files downloaded for an execution. */
+  private cleanupDownloadedFiles(executionId: string): void {
+    if (!this.downloadedFiles.has(executionId)) return;
+    this.downloadedFiles.delete(executionId);
+    try {
+      rmSync(join(tmpdir(), "telegramable-uploads", executionId), { recursive: true, force: true });
+    } catch {
+      // Non-critical — OS will eventually clean up /tmp
+    }
+  }
+
   private async tryCreateForumTopic(
     adapter: IMAdapter,
     chatId: string,
@@ -831,6 +897,7 @@ export class ChannelHub {
         }
         await this.sendExecutionSummary(adapter, event, topicId);
         this.closeForumTopicIfNeeded(adapter, event, topicId);
+        this.cleanupDownloadedFiles(event.executionId);
         return;
       }
 
@@ -841,6 +908,7 @@ export class ChannelHub {
       if (flushedContent && event.type === "complete") {
         await this.sendExecutionSummary(adapter, event, topicId);
         this.closeForumTopicIfNeeded(adapter, event, topicId);
+        this.cleanupDownloadedFiles(event.executionId);
         return;
       }
     }
@@ -858,6 +926,7 @@ export class ChannelHub {
       await this.sendExecutionSummary(adapter, event, topicId);
       // Close forum topic after all messages are sent
       this.closeForumTopicIfNeeded(adapter, event, topicId);
+      this.cleanupDownloadedFiles(event.executionId);
     }
   }
 

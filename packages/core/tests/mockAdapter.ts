@@ -65,6 +65,14 @@ export class MockAdapter implements IMAdapter {
     this.closedTopics.push({ chatId, topicId });
   }
 
+  public fileUrls = new Map<string, string>(); // fileId → URL for getFileUrl mock
+
+  async getFileUrl(fileId: string): Promise<string> {
+    const url = this.fileUrls.get(fileId);
+    if (!url) throw new Error(`Unknown fileId: ${fileId}`);
+    return url;
+  }
+
   public draftMessages: Array<{ chatId: string; draftId: number; text: string; messageId: number; options?: { threadId?: number } }> = [];
 
   async sendMessageDraft(chatId: string, draftId: number, text: string, options?: { threadId?: number }): Promise<number> {
