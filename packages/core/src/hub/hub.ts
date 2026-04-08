@@ -1063,21 +1063,32 @@ export class ChannelHub {
       await activity.sendingPromise;
     }
 
-    // If the message was sent to Telegram, edit it into a compact summary
+    // If the message was sent to Telegram, edit it into a detailed completion summary
     if (activity.promoted && activity.messageId && adapter.editMessage && activity.tools.length > 0) {
-      const toolNames = activity.tools.map((t) => t.name);
-      // Deduplicate consecutive tool names for a cleaner summary
-      const deduped: Array<{ name: string; count: number }> = [];
-      for (const name of toolNames) {
+      const total = activity.tools.length;
+      // Deduplicate consecutive identical tools (same name+input) for cleaner display
+      const deduped: Array<{ name: string; input?: Record<string, unknown>; count: number }> = [];
+      for (const tool of activity.tools) {
         const last = deduped[deduped.length - 1];
-        if (last && last.name === name) {
+        if (last && last.name === tool.name && JSON.stringify(last.input) === JSON.stringify(tool.input)) {
           last.count++;
         } else {
-          deduped.push({ name, count: 1 });
+          deduped.push({ name: tool.name, input: tool.input, count: 1 });
         }
       }
-      const parts = deduped.map((d) => d.count > 1 ? `${d.name} x${d.count}` : d.name);
-      const summary = `📋 <i>${activity.tools.length} steps: ${escapeHtml(parts.join(" → "))}</i>`;
+      const maxVisible = ChannelHub.TOOL_ACTIVITY_MAX_VISIBLE;
+      const visible = deduped.slice(-maxVisible);
+      const lines: string[] = [];
+      for (const entry of visible) {
+        const desc = formatToolDescription(entry.name, entry.input);
+        lines.push(entry.count > 1 ? `✓ ${desc} <i>x${entry.count}</i>` : `✓ ${desc}`);
+      }
+      const header = deduped.length > maxVisible
+        ? `✅ <b>Done</b> <i>(${total} steps, showing last ${maxVisible})</i>`
+        : total > 1
+          ? `✅ <b>Done</b> <i>(${total} steps)</i>`
+          : `✅ <b>Done</b>`;
+      const summary = `${header}\n${lines.join("\n")}`;
       await adapter.editMessage(chatId, activity.messageId, summary).catch(() => {});
     } else if (activity.promoted && activity.messageId && adapter.deleteMessage) {
       // If we can't edit (no tools recorded), just delete
