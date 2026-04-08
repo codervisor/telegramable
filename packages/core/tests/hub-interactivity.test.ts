@@ -422,7 +422,7 @@ test("ChannelHub sends execution summary to forum topic thread", async () => {
   }
 });
 
-test("ChannelHub sends execution summary before flushing streamed draft to prevent ordering issues", async () => {
+test("ChannelHub flushes streamed draft before sending execution summary for seamless transition", async () => {
   process.env.SHOW_EXECUTION_SUMMARY = "true";
   try {
     const eventBus = new EventBus();
@@ -464,9 +464,12 @@ test("ChannelHub sends execution summary before flushing streamed draft to preve
 
     assert.ok(summaryIdx >= 0, "should send execution summary");
     assert.ok(flushEditIdx >= 0, "should flush draft via editMessage");
+    // Draft must be flushed BEFORE the summary to eliminate the visible gap
+    // between the ephemeral draft disappearing and the permanent message appearing.
+    // editMessage preserves message position, so the summary still appears below.
     assert.ok(
-      summaryIdx < flushEditIdx,
-      `summary (index ${summaryIdx}) should be sent before draft flush edit (index ${flushEditIdx}) to prevent user messages from appearing between response and summary`
+      flushEditIdx < summaryIdx,
+      `draft flush edit (index ${flushEditIdx}) should happen before summary (index ${summaryIdx}) for seamless draft-to-permanent transition`
     );
 
     await hub.stop();

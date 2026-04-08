@@ -780,8 +780,27 @@ export class ChannelHub {
     if (event.type === "complete" || event.type === "error") {
       // Always stop typing indicator on completion
       this.stopTypingIndicator(event.channelId, event.chatId, event.executionId);
-      await this.finalizeToolActivity(adapter, event.channelId, event.chatId, event.executionId);
-      await this.flushAndDeleteThrottler(event.channelId, event.chatId);
+
+      // Check if the response is already visible via a streaming draft.
+      // If so, flush it IMMEDIATELY — before any other Telegram API calls —
+      // to convert the ephemeral draft into a permanent message via editMessage.
+      // Delaying the flush behind finalizeToolActivity / flushAndDeleteThrottler
+      // causes a visible gap where the draft disappears before the permanent
+      // message appears. editMessage preserves the message position, so
+      // subsequent messages (error text, summary) still appear below it.
+      const draftKey = `${event.channelId}:${event.chatId}:${event.executionId}`;
+      const draft = this.streamDrafts.get(draftKey);
+      const hasDraftContent = draft && draft.text.trim().length > 0;
+
+      if (hasDraftContent) {
+        await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId, topicId);
+      }
+
+      // Non-time-sensitive cleanup — runs after the draft is already stabilized
+      await Promise.all([
+        this.finalizeToolActivity(adapter, event.channelId, event.chatId, event.executionId),
+        this.flushAndDeleteThrottler(event.channelId, event.chatId),
+      ]);
 
       // Clear reaction on the source message
       const reactionMsgId = this.reactionMessageIds.get(event.executionId);
@@ -792,19 +811,8 @@ export class ChannelHub {
         });
       }
 
-      // Check if the response is already visible via a streaming draft.
-      // If so, send the summary (and error text if applicable) BEFORE flushing
-      // the draft to guarantee correct message ordering. The flush only converts
-      // the draft into a permanent message via editMessage — it doesn't change
-      // the message's position. Sending the summary first reserves its position
-      // directly below the visible response, preventing user messages from
-      // appearing between the response and the summary.
-      const draftKey = `${event.channelId}:${event.chatId}:${event.executionId}`;
-      const draft = this.streamDrafts.get(draftKey);
-      const hasDraftContent = draft && draft.text.trim().length > 0;
-
       if (hasDraftContent) {
-        // For errors, send the error text before the summary
+        // Draft was already flushed above — send error text and summary after it
         if (event.type === "error") {
           const text = formatEvent(event);
           if (text) {
@@ -815,8 +823,6 @@ export class ChannelHub {
           }
         }
         await this.sendExecutionSummary(adapter, event, topicId);
-        // Now flush the draft — editMessage keeps the draft at its original position
-        await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId, topicId);
         this.closeForumTopicIfNeeded(adapter, event, topicId);
         return;
       }
