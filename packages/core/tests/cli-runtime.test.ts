@@ -14,6 +14,7 @@ const logger = createLogger("error");
 const TEST_CMD = path.resolve(__dirname, "helpers/test-cmd.sh");
 const STALE_SESSION_CMD = path.resolve(__dirname, "helpers/stale-session-cmd.sh");
 const STREAM_JSON_CMD = path.resolve(__dirname, "helpers/stream-json-cmd.sh");
+const STREAM_JSON_THINKING_CMD = path.resolve(__dirname, "helpers/stream-json-thinking-cmd.sh");
 
 const msg = (overrides?: Partial<IMMessage>): IMMessage => ({
   channelId: "telegram",
@@ -493,4 +494,55 @@ test("CliRuntime defaults to stream-json when outputFormat is unset", async () =
   assert.ok(stdout.includes("--output-format stream-json"), "should default to stream-json");
   assert.ok(stdout.includes("--verbose"), "should include --verbose for stream-json");
   assert.ok(stdout.includes("--include-partial-messages"), "should include --include-partial-messages for stream-json");
+});
+
+// ---------- thinking events ----------
+
+test("CliRuntime emits thinking events from stream-json thinking blocks", async () => {
+  const config: AgentConfig = { name: "thinking-agent", command: STREAM_JSON_THINKING_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-thinking-1", eventBus);
+
+  const thinkingEvents = events.filter((e) => e.type === "thinking");
+  assert.ok(thinkingEvents.length > 0, "should emit at least one thinking event");
+});
+
+test("CliRuntime emits thinking, tool-use, and stream-text in correct order", async () => {
+  const config: AgentConfig = { name: "thinking-agent", command: STREAM_JSON_THINKING_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-thinking-2", eventBus);
+
+  const relevantTypes = events
+    .filter((e) => e.type === "thinking" || e.type === "tool-use" || e.type === "stream-text")
+    .map((e) => e.type);
+
+  // Thinking should come before tool-use and stream-text
+  const firstThinking = relevantTypes.indexOf("thinking");
+  const firstToolUse = relevantTypes.indexOf("tool-use");
+  const firstStreamText = relevantTypes.indexOf("stream-text");
+  assert.ok(firstThinking < firstToolUse, "thinking should come before tool-use");
+  assert.ok(firstThinking < firstStreamText, "thinking should come before stream-text");
+});
+
+test("CliRuntime does not emit duplicate events from assistant message with thinking", async () => {
+  const config: AgentConfig = { name: "thinking-agent", command: STREAM_JSON_THINKING_CMD, outputFormat: "stream-json" };
+  const runtime = new CliRuntime(config, logger);
+  const eventBus = new EventBus();
+  const events = collect(eventBus);
+
+  await runtime.execute(msg(), "exec-thinking-3", eventBus);
+
+  // Only one thinking event (from content_block_start), not duplicated from assistant message
+  const thinkingEvents = events.filter((e) => e.type === "thinking");
+  assert.equal(thinkingEvents.length, 1, "should emit exactly one thinking event (from content_block_start only)");
+
+  // Tool-use events: 2 per tool (start + enriched), not duplicated from assistant
+  const toolUseEvents = events.filter((e) => e.type === "tool-use");
+  assert.equal(toolUseEvents.length, 2, "should emit two tool-use events per tool (start + enriched)");
 });

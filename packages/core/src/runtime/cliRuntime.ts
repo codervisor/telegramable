@@ -41,6 +41,9 @@ export class CliRuntime implements Runtime {
   /** Track in-flight tool blocks to accumulate input from input_json_delta. */
   private pendingToolBlocks = new Map<string, { name: string; inputJson: string; index: number }>(); // executionId → current block
 
+  /** Track in-flight thinking blocks to accumulate thinking text from thinking_delta. */
+  private pendingThinkingBlocks = new Map<string, { index: number; text: string }>(); // executionId → current thinking block
+
   /** Resolved output format — defaults to stream-json inside CliRuntime. */
   private get resolvedOutputFormat(): "text" | "json" | "stream-json" {
     return this.config.outputFormat ?? "stream-json";
@@ -733,6 +736,22 @@ export class CliRuntime implements Runtime {
               toolName: block.name as string,
             }
           });
+        } else if (block?.type === "thinking") {
+          const index = typeof event.index === "number" ? event.index : 0;
+          // Start accumulating thinking text
+          this.pendingThinkingBlocks.set(executionId, { index, text: "" });
+          // Emit thinking event immediately so the hub can show an indicator
+          eventBus.emit({
+            executionId,
+            channelId: message.channelId,
+            chatId: message.chatId,
+            type: "thinking",
+            timestamp: Date.now(),
+          });
+        } else if (block?.type !== "text") {
+          // "text" blocks are expected and handled via text_delta below.
+          // Log any other unknown block types for future visibility.
+          this.logger.info("Unhandled content_block_start type.", { executionId, blockType: block?.type });
         }
       } else if (eventType === "content_block_delta") {
         const delta = event.delta as Record<string, unknown> | undefined;
@@ -755,15 +774,25 @@ export class CliRuntime implements Runtime {
           if (pending && pending.index === blockIndex) {
             pending.inputJson += (delta.partial_json as string) || "";
           }
+        } else if (delta?.type === "thinking_delta") {
+          // Accumulate thinking text fragments for the matching thinking block
+          const pending = this.pendingThinkingBlocks.get(executionId);
+          const blockIndex = typeof event.index === "number" ? event.index : 0;
+          if (pending && pending.index === blockIndex) {
+            pending.text += (delta.thinking as string) || "";
+          }
+        } else if (delta?.type) {
+          this.logger.info("Unhandled content_block_delta type.", { executionId, deltaType: delta.type });
         }
       } else if (eventType === "content_block_stop") {
-        // Tool block complete — emit enriched tool-use event with parsed input
-        const pending = this.pendingToolBlocks.get(executionId);
         const blockIndex = typeof event.index === "number" ? event.index : 0;
-        if (pending && pending.index === blockIndex) {
-          if (pending.inputJson) {
+
+        // Tool block complete — emit enriched tool-use event with parsed input
+        const pendingTool = this.pendingToolBlocks.get(executionId);
+        if (pendingTool && pendingTool.index === blockIndex) {
+          if (pendingTool.inputJson) {
             try {
-              const toolInput = JSON.parse(pending.inputJson) as Record<string, unknown>;
+              const toolInput = JSON.parse(pendingTool.inputJson) as Record<string, unknown>;
               eventBus.emit({
                 executionId,
                 channelId: message.channelId,
@@ -771,7 +800,7 @@ export class CliRuntime implements Runtime {
                 type: "tool-use",
                 timestamp: Date.now(),
                 payload: {
-                  toolName: pending.name,
+                  toolName: pendingTool.name,
                   toolInput,
                 }
               });
@@ -779,11 +808,19 @@ export class CliRuntime implements Runtime {
               // Malformed JSON — the initial tool-use event already showed the name
             }
           }
-          // Always clean up to prevent memory leaks
           this.pendingToolBlocks.delete(executionId);
         }
+
+        // Thinking block complete — clean up accumulated text
+        const pendingThinking = this.pendingThinkingBlocks.get(executionId);
+        if (pendingThinking && pendingThinking.index === blockIndex) {
+          this.pendingThinkingBlocks.delete(executionId);
+        }
+      } else if (eventType !== "message_start" && eventType !== "message_stop" && eventType !== "message_delta") {
+        // message_start, message_stop, and message_delta are expected lifecycle events.
+        // Log any other unknown stream event types for future visibility.
+        this.logger.info("Unhandled stream event type.", { executionId, eventType });
       }
-      // Other stream events (message_start, message_stop, etc.) are ignored
       return;
     }
 

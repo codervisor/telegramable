@@ -8,7 +8,8 @@ export type ExecutionEventType =
   | "permission-request"
   | "permission-response"
   | "stream-text"
-  | "tool-use";
+  | "tool-use"
+  | "thinking";
 
 export interface ExecutionEvent {
   executionId: string;

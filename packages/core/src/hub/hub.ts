@@ -199,6 +199,8 @@ const formatToolDescription = (toolName: string, toolInput?: Record<string, unkn
       return command ? `Running <code>${short(command, 60)}</code>` : "Running command";
     case "agent":
       return prompt ? `Agent: ${short(prompt, 50)}` : "Running sub-agent";
+    case "thinking":
+      return "🧠 Thinking";
     default: {
       // For unknown tools, show the tool name with the first string input value
       const firstVal = Object.values(toolInput).find((v) => typeof v === "string");
@@ -819,6 +821,17 @@ export class ChannelHub {
     // Handle permission requests — send inline keyboard
     if (event.type === "permission-request") {
       await this.forwardPermissionRequest(adapter, event, topicId);
+      return;
+    }
+
+    // Handle thinking — show as an activity step in the tool timeline
+    if (event.type === "thinking") {
+      await this.flushStreamDraft(adapter, event.channelId, event.chatId, event.executionId, topicId);
+      await this.forwardToolActivity(adapter, {
+        ...event,
+        payload: { ...event.payload, toolName: "Thinking" },
+      }, topicId);
+      this.startTypingIndicator(adapter, event.chatId, event.executionId, topicId);
       return;
     }
 
