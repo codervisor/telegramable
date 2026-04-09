@@ -241,7 +241,7 @@ export class ChannelHub {
   private readonly streamDrafts = new Map<string, { text: string; messageId?: number; draftId?: number; draftFailed?: boolean }>(); // for streaming text accumulation
   private draftIdCounter = 0; // monotonic counter for Telegram draft IDs
   private readonly typingIntervals = new Map<string, ReturnType<typeof setInterval>>(); // periodic typing indicators
-  private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown> }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean; sendingPromise?: Promise<void> }>(); // tool activity tracking
+  private readonly toolActivityMessages = new Map<string, { tools: Array<{ name: string; input?: Record<string, unknown>; isSubagent?: boolean }>; messageId?: number; promotionTimer?: ReturnType<typeof setTimeout>; promoted: boolean; sendingPromise?: Promise<void> }>(); // tool activity tracking
   private readonly eventQueues = new Map<string, Promise<void>>(); // serialize events per execution
   private readonly reactionMessageIds = new Map<string, number>(); // executionId → source messageId for clearing reactions
   private readonly downloadedFiles = new Map<string, string[]>(); // executionId → local file paths to clean up
