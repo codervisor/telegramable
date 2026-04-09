@@ -787,6 +787,8 @@ export class CliRuntime implements Runtime {
           if (pending && pending.index === blockIndex) {
             pending.text += (delta.thinking as string) || "";
           }
+        } else if (delta?.type === "signature_delta") {
+          // Integrity verification signature for thinking blocks — no action needed
         } else if (delta?.type) {
           this.logger.info("Unhandled content_block_delta type.", { executionId, deltaType: delta.type });
         }
@@ -823,8 +825,8 @@ export class CliRuntime implements Runtime {
         if (pendingThinking && pendingThinking.index === blockIndex) {
           this.pendingThinkingBlocks.delete(executionId);
         }
-      } else if (eventType !== "message_start" && eventType !== "message_stop" && eventType !== "message_delta") {
-        // message_start, message_stop, and message_delta are expected lifecycle events.
+      } else if (eventType !== "message_start" && eventType !== "message_stop" && eventType !== "message_delta" && eventType !== "ping") {
+        // message_start, message_stop, message_delta, and ping are expected lifecycle/keep-alive events.
         // Log any other unknown stream event types for future visibility.
         this.logger.info("Unhandled stream event type.", { executionId, eventType });
       }
