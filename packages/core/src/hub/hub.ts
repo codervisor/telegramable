@@ -347,8 +347,10 @@ export class ChannelHub {
       // Mark completion as pending SYNCHRONOUSLY (before queueing) so any
       // still-queued stream-text events can short-circuit their expensive
       // sendMessageDraft calls. The complete handler will flush the final
-      // accumulated draft text via editMessage instead — avoiding a visible
-      // delay between the end of streaming and the draft→permanent transition.
+      // accumulated draft text by editing the existing streamed message when
+      // one exists, or by sending a new message if streaming was short-
+      // circuited before any draft send — avoiding a visible delay between
+      // the end of streaming and the draft→permanent transition.
       if (event.type === "complete" || event.type === "error") {
         this.completionPending.add(event.executionId);
       }
@@ -1228,10 +1230,11 @@ export class ChannelHub {
 
     // If the complete/error event is already queued, skip the expensive
     // sendMessageDraft / editMessage call here. The complete handler will
-    // flush the fully accumulated draft.text via editMessage, which avoids
-    // a multi-second delay between the end of streaming and the final
-    // draft→permanent transition (the visible "Memory updated" message
-    // landing before the response message is finalized).
+    // flush the fully accumulated draft.text using the appropriate
+    // finalization path (editing an existing message or sending a new one),
+    // which avoids a multi-second delay between the end of streaming and
+    // the final draft→permanent transition (the visible "Memory updated"
+    // message landing before the response message is finalized).
     if (this.completionPending.has(event.executionId)) {
       return;
     }
